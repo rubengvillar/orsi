@@ -1,0 +1,21 @@
+---
+export const prerender = false;
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import OrderDetails from "../../components/orders/OrderDetails";
+import { ArrowLeft } from "lucide-react";
+
+const { id } = Astro.params;
+---
+
+<DashboardLayout title="Order Details">
+    <div class="max-w-7xl mx-auto">
+        <a
+            href="/orders"
+            class="inline-flex items-center text-slate-500 hover:text-blue-600 mb-6 transition-colors font-medium"
+        >
+            <ArrowLeft className="w-4 h-4 mr-2" /> Back to Orders
+        </a>
+
+        <OrderDetails client:only="react" orderId={id!} />
+    </div>
+</DashboardLayout>

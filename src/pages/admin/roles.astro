@@ -1,0 +1,18 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import RoleManager from "../../components/admin/RoleManager";
+---
+
+<DashboardLayout title="Gestión de Roles">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-slate-800">
+            Gestión de Roles y Permisos
+        </h1>
+        <p class="text-slate-500 mt-2">
+            Crea y modifica los roles de usuario y sus niveles de acceso al
+            sistema.
+        </p>
+    </div>
+
+    <RoleManager client:load />
+</DashboardLayout>

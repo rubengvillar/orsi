@@ -1,0 +1,21 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import OrderManager from "../../components/orders/OrderManager";
+import { supabase } from "../../lib/supabase";
+
+// Server-side permission check (Conceptual - in SPAs usually done via RLS + Client side,
+// using Supabase Auth Helper for Astro would be better for SSR protection)
+// For now, we render the page and Client Component handles data fetching which respects RLS.
+---
+
+<DashboardLayout title="Orders">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-slate-800">Order Management</h1>
+        <p class="text-slate-500 mt-2">Manage client orders and projects.</p>
+    </div>
+
+    <!-- We pass 'canManage' prop. In a real app we'd verify this server-side or via a hook. 
+         For MVP, we'll let the component handle the button visibility logic based on role, 
+         or default to true and let RLS block writes. -->
+    <OrderManager client:load canManage={true} />
+</DashboardLayout>

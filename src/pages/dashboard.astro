@@ -1,0 +1,41 @@
+---
+import DashboardLayout from "../layouts/DashboardLayout.astro";
+import RecentActivity from "../components/dashboard/RecentActivity";
+import AnalyticDash from "../components/dashboard/AnalyticDash";
+---
+
+<DashboardLayout title="Dashboard">
+    <!-- Main Analytics Section -->
+    <div class="mb-10">
+        <AnalyticDash client:load />
+    </div>
+
+    <!-- Recent Activity & Alerts Container -->
+    <!-- Recent Usage Activity (Client Component Hook) -->
+    <div
+        class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col"
+    >
+        <div
+            class="px-6 py-4 border-b border-slate-200 flex justify-between items-center"
+        >
+            <h3 class="font-semibold text-slate-800">Últimos Movimientos</h3>
+            <a href="/orders" class="text-xs text-blue-600 hover:underline"
+                >Ver todas las órdenes</a
+            >
+        </div>
+        <div class="p-0 flex-1 overflow-x-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="bg-slate-50 text-slate-500 font-medium">
+                    <tr>
+                        <th class="px-4 py-3">Obra / Cliente</th>
+                        <th class="px-4 py-3">Material</th>
+                        <th class="px-4 py-3 text-right">Cant</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <RecentActivity client:visible />
+                </tbody>
+            </table>
+        </div>
+    </div>
+</DashboardLayout>

@@ -1,0 +1,19 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import AuditLogViewer from "../../components/admin/AuditLogViewer";
+import { ShieldAlert } from "lucide-react";
+---
+
+<DashboardLayout title="Audit Logs">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <ShieldAlert className="w-6 h-6 text-purple-600" />
+            Audit & Security Logs
+        </h1>
+        <p class="text-slate-500 mt-1">
+            Track all changes made to the system (Insert, Update, Delete).
+        </p>
+    </div>
+
+    <AuditLogViewer client:visible />
+</DashboardLayout>

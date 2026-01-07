@@ -1,0 +1,16 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import PermissionManager from "../../components/admin/PermissionManager";
+---
+
+<DashboardLayout title="Gestión de Permisos">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-slate-800">Gestión de Permisos</h1>
+        <p class="text-slate-500 mt-2">
+            Define los permisos atómicos que pueden ser asignados a los roles
+            del sistema.
+        </p>
+    </div>
+
+    <PermissionManager client:load />
+</DashboardLayout>

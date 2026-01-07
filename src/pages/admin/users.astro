@@ -1,0 +1,15 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import AdminUserManager from "../../components/admin/AdminUserManager";
+---
+
+<DashboardLayout title="Gestión de Usuarios">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-slate-800">Cuentas de Usuario</h1>
+        <p class="text-slate-500">
+            Administra quién tiene acceso al sistema y sus roles.
+        </p>
+    </div>
+
+    <AdminUserManager client:load />
+</DashboardLayout>
