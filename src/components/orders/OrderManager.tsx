@@ -36,7 +36,11 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
         description: "",
         manufactured_at: "",
         installed_at: "",
-        operator_ids: [] as string[]
+        legacy_order_number: "",
+        address: "",
+        estimated_installation_time: "",
+        cutter_ids: [] as string[],
+        installer_ids: [] as string[]
     });
 
     useEffect(() => {
@@ -77,6 +81,9 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
                 status: "Pending",
                 manufactured_at: formData.manufactured_at || null,
                 installed_at: formData.installed_at || null,
+                legacy_order_number: formData.legacy_order_number || null,
+                address: formData.address || null,
+                estimated_installation_time: formData.estimated_installation_time || null,
             },
         ]).select();
 
@@ -87,18 +94,46 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
 
         const newOrderId = orderData[0].id;
 
-        // 2. Link Operators
-        if (formData.operator_ids.length > 0) {
-            const operatorLinks = formData.operator_ids.map(opId => ({
-                order_id: newOrderId,
-                operator_id: opId
-            }));
+        // 2. Link Operators (Cutter & Installer)
+        const operatorLinks = [];
+
+        if (formData.cutter_ids.length > 0) {
+            formData.cutter_ids.forEach(opId => {
+                operatorLinks.push({
+                    order_id: newOrderId,
+                    operator_id: opId,
+                    role: 'Cutter'
+                });
+            });
+        }
+
+        if (formData.installer_ids.length > 0) {
+            formData.installer_ids.forEach(opId => {
+                operatorLinks.push({
+                    order_id: newOrderId,
+                    operator_id: opId,
+                    role: 'Installer'
+                });
+            });
+        }
+
+        if (operatorLinks.length > 0) {
             const { error: linkError } = await supabase.from("order_operators").insert(operatorLinks);
             if (linkError) console.error("Error linking operators:", linkError);
         }
 
         setIsModalOpen(false);
-        setFormData({ client_name: "", description: "", manufactured_at: "", installed_at: "", operator_ids: [] });
+        setFormData({
+            client_name: "",
+            description: "",
+            manufactured_at: "",
+            installed_at: "",
+            legacy_order_number: "",
+            address: "",
+            estimated_installation_time: "",
+            cutter_ids: [],
+            installer_ids: []
+        });
         fetchOrders();
     };
 
@@ -201,29 +236,46 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
                     <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
                         <h2 className="text-xl font-bold text-slate-800 mb-4">Create New Order</h2>
                         <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                                        Client Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={formData.client_name}
+                                        onChange={(e) =>
+                                            setFormData({ ...formData, client_name: e.target.value })
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                                        Nro. Orden Antiguo (Opcional)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={formData.legacy_order_number}
+                                        onChange={(e) =>
+                                            setFormData({ ...formData, legacy_order_number: e.target.value })
+                                        }
+                                    />
+                                </div>
+                            </div>
+
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    Client Name
+                                    Dirección de Obra / Colocación
                                 </label>
                                 <input
                                     type="text"
-                                    required
                                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    value={formData.client_name}
+                                    value={formData.address}
                                     onChange={(e) =>
-                                        setFormData({ ...formData, client_name: e.target.value })
-                                    }
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    Description
-                                </label>
-                                <textarea
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
-                                    value={formData.description}
-                                    onChange={(e) =>
-                                        setFormData({ ...formData, description: e.target.value })
+                                        setFormData({ ...formData, address: e.target.value })
                                     }
                                 />
                             </div>
@@ -258,35 +310,87 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Asignar Operarios / Colocadores
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    Tiempo Estimado de Colocación
                                 </label>
-                                <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg p-3 space-y-2">
-                                    {operators.length === 0 ? (
-                                        <p className="text-xs text-slate-400 italic text-center py-2">No hay operarios activos</p>
-                                    ) : (
-                                        operators.map((op) => (
+                                <input
+                                    type="text"
+                                    placeholder="Ej: 2 días, 4 horas..."
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    value={formData.estimated_installation_time}
+                                    onChange={(e) =>
+                                        setFormData({ ...formData, estimated_installation_time: e.target.value })
+                                    }
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                    Description / Notas
+                                </label>
+                                <textarea
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
+                                    value={formData.description}
+                                    onChange={(e) =>
+                                        setFormData({ ...formData, description: e.target.value })
+                                    }
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                        Responsables de Corte
+                                    </label>
+                                    <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1 bg-slate-50">
+                                        {operators.map((op) => (
                                             <div key={op.id} className="flex items-center gap-2">
                                                 <input
                                                     type="checkbox"
-                                                    id={`op-${op.id}`}
-                                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                                    checked={formData.operator_ids.includes(op.id)}
+                                                    id={`cutter-${op.id}`}
+                                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3 w-3"
+                                                    checked={formData.cutter_ids.includes(op.id)}
                                                     onChange={(e) => {
                                                         const newIds = e.target.checked
-                                                            ? [...formData.operator_ids, op.id]
-                                                            : formData.operator_ids.filter(id => id !== op.id);
-                                                        setFormData({ ...formData, operator_ids: newIds });
+                                                            ? [...formData.cutter_ids, op.id]
+                                                            : formData.cutter_ids.filter(id => id !== op.id);
+                                                        setFormData({ ...formData, cutter_ids: newIds });
                                                     }}
                                                 />
-                                                <label htmlFor={`op-${op.id}`} className="text-sm text-slate-700 cursor-pointer">
+                                                <label htmlFor={`cutter-${op.id}`} className="text-xs text-slate-700 cursor-pointer">
                                                     {op.full_name}
                                                 </label>
                                             </div>
-                                        ))
-                                    )}
+                                        ))}
+                                    </div>
                                 </div>
-                                <p className="text-[10px] text-slate-400 mt-1">Puedes seleccionar uno o varios operarios.</p>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                        Responsables de Colocación
+                                    </label>
+                                    <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1 bg-slate-50">
+                                        {operators.map((op) => (
+                                            <div key={op.id} className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    id={`inst-${op.id}`}
+                                                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-3 w-3"
+                                                    checked={formData.installer_ids.includes(op.id)}
+                                                    onChange={(e) => {
+                                                        const newIds = e.target.checked
+                                                            ? [...formData.installer_ids, op.id]
+                                                            : formData.installer_ids.filter(id => id !== op.id);
+                                                        setFormData({ ...formData, installer_ids: newIds });
+                                                    }}
+                                                />
+                                                <label htmlFor={`inst-${op.id}`} className="text-xs text-slate-700 cursor-pointer">
+                                                    {op.full_name}
+                                                </label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Note: Created By is handled by RLS/Trigger or default value using auth.uid() if set in table definition, otherwise we assume default user context works or supabase handles it via RLS policies checking auth.uid() */}

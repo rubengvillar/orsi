@@ -1,38 +1,10 @@
 ---
 import "../index.css";
-import {
-    LayoutDashboard,
-    Package,
-    Shield,
-    Users,
-    LogOut,
-    Box,
-    Scissors,
-} from "lucide-react";
 import UserMenu from "../components/layout/UserMenu";
+import Sidebar from "../components/layout/Sidebar";
 
 const { title } = Astro.props;
-
-// Mock navigation items (will be dynamic based on permisssions later)
-const navItems = [
-    { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { label: "Ordenes", href: "/orders", icon: Box },
-    { label: "Accesorios", href: "/inventory/accessories", icon: Package },
-    { label: "Perfiles", href: "/inventory/profiles", icon: Package },
-    { label: "Vidrios", href: "/inventory/glass", icon: Package },
-    { label: "Optimizar Cortes", href: "/inventory/optimizer", icon: Scissors },
-    { label: "Plan de Cortes", href: "/inventory/cuts", icon: Scissors },
-    {
-        label: "Insumos Vidrio",
-        href: "/inventory/glass-accessories",
-        icon: Package,
-    },
-    { label: "Usuarios", href: "/admin/users", icon: Users },
-    { label: "Operarios", href: "/admin/operators", icon: Users },
-    { label: "Roles", href: "/admin/roles", icon: Shield },
-    { label: "Permisos", href: "/admin/permissions", icon: Shield },
-    { label: "Auditoría", href: "/admin/audit", icon: Shield },
-];
+const currentPath = Astro.url.pathname;
 ---
 
 <html lang="es">
@@ -44,43 +16,9 @@ const navItems = [
         <title>{title} | Stock Control</title>
     </head>
     <body class="bg-gray-50 flex h-screen overflow-hidden">
-        <!-- Sidebar -->
-        <aside class="w-64 bg-slate-900 text-white hidden md:flex flex-col">
-            <div class="p-6 border-b border-slate-700">
-                <h1 class="text-2xl font-bold tracking-tight text-blue-400">
-                    Orsi Stock
-                </h1>
-            </div>
-
-            <nav class="flex-1 overflow-y-auto py-4">
-                <ul class="space-y-1 px-3">
-                    {
-                        navItems.map((item) => (
-                            <li>
-                                <a
-                                    href={item.href}
-                                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-colors"
-                                >
-                                    <item.icon className="w-5 h-5" />
-                                    <span class="font-medium">
-                                        {item.label}
-                                    </span>
-                                </a>
-                            </li>
-                        ))
-                    }
-                </ul>
-            </nav>
-
-            <div class="p-4 border-t border-slate-700">
-                <a
-                    href="/logout"
-                    class="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                >
-                    <LogOut className="w-5 h-5" />
-                    <span>Cerrar Sesión</span>
-                </a>
-            </div>
+        <!-- Sidebar container -->
+        <aside class="w-64 bg-slate-900 border-r border-slate-800 hidden md:block">
+            <Sidebar client:load currentPath={currentPath} />
         </aside>
 
         <!-- Main Content -->

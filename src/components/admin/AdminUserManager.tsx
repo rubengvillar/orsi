@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
-import { Users, UserPlus, Search, Shield, Mail, Trash2, MoreVertical, Edit2 } from "lucide-react";
+import { Users, UserPlus, Search, Shield, Mail, Trash2, MoreVertical, Edit2, Key } from "lucide-react";
 import { Modal } from "../ui/Modal";
 
 export default function AdminUserManager() {
+    // List State
     const [users, setUsers] = useState<any[]>([]);
     const [roles, setRoles] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState("");
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Form State
@@ -22,31 +24,83 @@ export default function AdminUserManager() {
 
     const fetchData = async () => {
         setLoading(true);
-        // 1. Fetch Profiles (Users) with their roles
-        const { data: profiles, error: pError } = await supabase
-            .from('profiles')
-            .select(`
-                *,
-                user_roles (
+        try {
+            // 0. Ensure current user has a profile (Self-healing for legacy accounts)
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            if (authUser) {
+                const { data: existingProfile } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', authUser.id)
+                    .single();
+
+                if (!existingProfile) {
+                    console.log("Restaurando perfil faltante para el usuario actual...");
+                    const { error: insError } = await supabase.from('profiles').insert({
+                        id: authUser.id,
+                        email: authUser.email,
+                        full_name: authUser.user_metadata?.full_name || "Administrador"
+                    });
+
+                    if (insError) {
+                        console.error("Error al restaurar perfil:", insError);
+                    } else {
+                        console.log("Perfil restaurado con éxito.");
+                    }
+                }
+            }
+
+            // 1. Fetch Profiles
+            const { data: profiles, error: pError } = await supabase
+                .from('profiles')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (pError) throw pError;
+            console.log(`Fetched ${profiles?.length} profiles`);
+
+            // 2. Fetch Assignments (user_id -> role info)
+            const { data: assignments, error: aError } = await supabase
+                .from('user_roles')
+                .select(`
+                    user_id,
                     roles ( id, name )
-                )
-            `)
-            .order('created_at', { ascending: false });
+                `);
 
-        if (profiles) setUsers(profiles);
+            if (aError) {
+                console.error("Error fetching user roles:", aError);
+            }
 
-        // 2. Fetch Roles for dropdown
-        const { data: rolesData } = await supabase
-            .from('roles')
-            .select('*')
-            .order('name');
+            // 3. Map roles to users
+            const roleMap: Record<string, any[]> = {};
+            assignments?.forEach(a => {
+                if (!roleMap[a.user_id]) roleMap[a.user_id] = [];
+                roleMap[a.user_id].push(a);
+            });
 
-        if (rolesData) {
-            setRoles(rolesData);
-            if (rolesData.length > 0) setFormData(prev => ({ ...prev, role_id: rolesData[0].id }));
+            const enhancedUsers = profiles?.map(user => ({
+                ...user,
+                user_roles: roleMap[user.id] || []
+            })) || [];
+
+            setUsers(enhancedUsers);
+
+            // 4. Fetch All Roles for the dropdown
+            const { data: rolesData } = await supabase
+                .from('roles')
+                .select('*')
+                .order('name');
+
+            if (rolesData) {
+                setRoles(rolesData);
+                if (rolesData.length > 0) setFormData(prev => ({ ...prev, role_id: rolesData[0].id }));
+            }
+        } catch (err: any) {
+            console.error("Error fetching admin user data:", err);
+            alert("Error al cargar datos: " + err.message);
+        } finally {
+            setLoading(false);
         }
-
-        setLoading(false);
     };
 
     const handleInvite = async (e: React.FormEvent) => {
@@ -88,6 +142,30 @@ export default function AdminUserManager() {
         fetchData();
     };
 
+    const handleResetPassword = async (email: string) => {
+        if (!confirm(`¿Enviar correo de restablecimiento de contraseña a ${email}?`)) return;
+        setLoading(true);
+        try {
+            const response = await fetch('/api/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message);
+            alert(result.message);
+        } catch (err: any) {
+            alert("Error: " + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const filteredUsers = users.filter(user =>
+        user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     return (
         <div className="space-y-6">
             {/* Stats Header */}
@@ -99,6 +177,11 @@ export default function AdminUserManager() {
                     <div>
                         <p className="text-sm text-slate-500 font-medium">Total Usuarios</p>
                         <p className="text-2xl font-bold text-slate-800">{users.length}</p>
+                        {searchTerm && (
+                            <p className="text-[10px] text-blue-500 font-bold uppercase tracking-tight">
+                                {filteredUsers.length} encontrados
+                            </p>
+                        )}
                     </div>
                 </div>
             </div>
@@ -111,6 +194,8 @@ export default function AdminUserManager() {
                         type="text"
                         placeholder="Buscar por nombre o email..."
                         className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
                 <button
@@ -136,16 +221,18 @@ export default function AdminUserManager() {
                         <tbody className="divide-y divide-slate-100">
                             {loading && users.length === 0 ? (
                                 <tr><td colSpan={4} className="text-center py-12 text-slate-500">Cargando usuarios...</td></tr>
-                            ) : users.map(user => (
+                            ) : filteredUsers.length === 0 ? (
+                                <tr><td colSpan={4} className="text-center py-12 text-slate-400 italic">No se encontraron usuarios que coincidan con la búsqueda.</td></tr>
+                            ) : filteredUsers.map(user => (
                                 <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 font-bold">
-                                                {user.full_name?.[0].toUpperCase() || user.email[0].toUpperCase()}
+                                            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 font-bold overflow-hidden">
+                                                {user.full_name?.[0] || user.email?.[0]?.toUpperCase() || "?"}
                                             </div>
                                             <div>
                                                 <p className="font-semibold text-slate-800">{user.full_name || "Sin nombre"}</p>
-                                                <p className="text-xs text-slate-500">{user.email}</p>
+                                                <p className="text-xs text-slate-500">{user.email || "Sin email"}</p>
                                             </div>
                                         </div>
                                     </td>
@@ -165,9 +252,22 @@ export default function AdminUserManager() {
                                         {new Date(user.created_at).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <button onClick={() => handleDelete(user.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                                            <Trash2 className="w-5 h-5" />
-                                        </button>
+                                        <div className="flex justify-end gap-2">
+                                            <button
+                                                onClick={() => handleResetPassword(user.email)}
+                                                title="Restablecer Contraseña"
+                                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                            >
+                                                <Key className="w-5 h-5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(user.id)}
+                                                title="Eliminar Perfil"
+                                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

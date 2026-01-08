@@ -7,12 +7,6 @@ interface MaterialUsageFormProps {
     onUsageRecorded: () => void;
 }
 
-interface Worker {
-    id: string;
-    full_name: string;
-    email: string;
-}
-
 interface MaterialItem {
     id: string;
     code: string;
@@ -29,11 +23,9 @@ interface Operator {
 
 export default function MaterialUsageForm({ orderId, onUsageRecorded }: MaterialUsageFormProps) {
     const [loading, setLoading] = useState(false);
-    const [workers, setWorkers] = useState<Worker[]>([]);
     const [operators, setOperators] = useState<Operator[]>([]);
 
     // Selection State
-    const [selectedWorker, setSelectedWorker] = useState<string>("");
     const [selectedOperator, setSelectedOperator] = useState<string>("");
     const [materialType, setMaterialType] = useState<MaterialType>('aluminum_accessory');
     const [searchQuery, setSearchQuery] = useState("");
@@ -43,7 +35,6 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        fetchWorkers();
         fetchOperators();
     }, []);
 
@@ -52,12 +43,6 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
             fetchMaterials();
         }
     }, [materialType, searchQuery]);
-
-    const fetchWorkers = async () => {
-        // Ideally filter by role, but for now getting profiles is enough
-        const { data } = await supabase.from('profiles').select('id, full_name, email');
-        if (data) setWorkers(data);
-    };
 
     const fetchOperators = async () => {
         const { data } = await supabase.from('operators').select('id, full_name').eq('is_active', true);
@@ -69,15 +54,12 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
         switch (materialType) {
             case 'aluminum_accessory': table = 'aluminum_accessories'; break;
             case 'aluminum_profile': table = 'aluminum_profiles'; break;
-            case 'glass_sheet': table = 'glass_sheets'; break; // Note: Joined with glass_types normally, keeping simple for now
+            case 'glass_sheet': table = 'glass_sheets'; break;
             case 'glass_accessory': table = 'glass_accessories'; break;
         }
 
         let query = supabase.from(table).select('id, description, quantity');
 
-        // Adjust query based on table structure (glass_sheets usually needs relation to glass_types for description)
-        // For MVP/Robustness let's handle the glass_sheet special case or assume a view.
-        // If table is glass_sheets, we select glass_types(code) etc.
         if (materialType === 'glass_sheet') {
             const { data, error } = await supabase.from('glass_sheets').select('id, quantity, glass_types(code, description)');
             if (data && !error) {
@@ -88,15 +70,14 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
                     quantity: item.quantity
                 })).filter((item: any) =>
                     !searchQuery ||
-                    item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    item.code.toLowerCase().includes(searchQuery.toLowerCase())
+                    (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                    (item.code && item.code.toLowerCase().includes(searchQuery.toLowerCase()))
                 ));
                 return;
             }
         } else {
-            // Standard tables with code/description
             query = query.select('id, code, description, quantity');
-            if (searchQuery) query = query.ilike('description', `%${searchQuery}%`);
+            if (searchQuery) query = query.or(`description.ilike.%${searchQuery}%,code.ilike.%${searchQuery}%`);
         }
 
         const { data, error } = await query.limit(20);
@@ -110,25 +91,28 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
         setError(null);
         setLoading(true);
 
-        if (!selectedWorker || !selectedMaterial || quantity <= 0) {
-            setError("Please fill all fields correctly");
-            setLoading(false);
-            return;
-        }
-
         try {
-            const { error } = await supabase.rpc('register_material_usage', {
+            const { data: { session } } = await supabase.auth.getSession();
+            const workerId = session?.user?.id;
+
+            if (!workerId || !selectedMaterial || quantity <= 0) {
+                setError("Por favor complete todos los campos correctamente.");
+                setLoading(false);
+                return;
+            }
+
+            const { error: rpcError } = await supabase.rpc('register_material_usage', {
                 p_order_id: orderId,
-                p_worker_id: selectedWorker,
+                p_worker_id: workerId,
                 p_material_type: materialType,
                 p_material_id: selectedMaterial,
                 p_quantity: quantity,
                 p_operator_id: selectedOperator || null
             });
 
-            if (error) throw error;
+            if (rpcError) throw rpcError;
 
-            alert("Material usage recorded!");
+            alert("¡Uso de material registrado!");
             setQuantity(1);
             setSelectedMaterial("");
             setSelectedOperator("");
@@ -136,8 +120,8 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
 
         } catch (err: any) {
             console.error(err);
-            const msg = err.message || "Failed to record usage";
-            if (msg.includes("Material not found")) setError("Item not found or stock issue.");
+            const msg = err.message || "Error al registrar uso";
+            if (msg.includes("Material not found")) setError("Ítem no encontrado o problema de stock.");
             else setError(msg);
         } finally {
             setLoading(false);
@@ -148,7 +132,7 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <Box className="w-5 h-5 text-blue-600" />
-                Register Material Usage
+                Registrar Uso de Material
             </h3>
 
             {error && (
@@ -159,64 +143,46 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Worker (Recorded by)</label>
-                        <div className="relative">
-                            <User className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
-                            <select
-                                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white text-sm"
-                                value={selectedWorker}
-                                onChange={(e) => setSelectedWorker(e.target.value)}
-                                required
-                            >
-                                <option value="">Select...</option>
-                                {workers.map(w => (
-                                    <option key={w.id} value={w.id}>{w.full_name || w.email}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Operator (Delivered to)</label>
-                        <div className="relative">
-                            <User className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
-                            <select
-                                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white text-sm"
-                                value={selectedOperator}
-                                onChange={(e) => setSelectedOperator(e.target.value)}
-                            >
-                                <option value="">Optional...</option>
-                                {operators.map(op => (
-                                    <option key={op.id} value={op.id}>{op.full_name}</option>
-                                ))}
-                            </select>
-                        </div>
+                {/* Operator Selection (Delivered to) */}
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Entregado a (Operario)</label>
+                    <div className="relative">
+                        <User className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
+                        <select
+                            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white text-sm"
+                            value={selectedOperator}
+                            onChange={(e) => setSelectedOperator(e.target.value)}
+                        >
+                            <option value="">Opcional...</option>
+                            {operators.map(op => (
+                                <option key={op.id} value={op.id}>{op.full_name}</option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 
                 {/* Material Type */}
                 <div className="grid grid-cols-2 gap-2">
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Categoría</label>
                         <select
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             value={materialType}
                             onChange={(e) => setMaterialType(e.target.value as MaterialType)}
                         >
-                            <option value="aluminum_accessory">Alu Accessory</option>
-                            <option value="aluminum_profile">Alu Profile</option>
-                            <option value="glass_sheet">Glass Sheet</option>
-                            <option value="glass_accessory">Glass Accessory</option>
+                            <option value="aluminum_accessory">Acc. Aluminio</option>
+                            <option value="aluminum_profile">Perfil Aluminio</option>
+                            <option value="glass_sheet">Hoja Vidrio</option>
+                            <option value="glass_accessory">Acc. Vidrio</option>
                         </select>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Quantity</label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Cantidad</label>
                         <input
                             type="number"
                             min="0.1"
                             step="0.1"
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             value={quantity}
                             onChange={(e) => setQuantity(parseFloat(e.target.value))}
                         />
@@ -225,43 +191,45 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
 
                 {/* Material Search & Select */}
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Item</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Ítem / Material</label>
                     <div className="relative mb-2">
                         <Search className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
                         <input
                             type="text"
-                            placeholder="Search item..."
+                            placeholder="Buscar material..."
                             className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
 
-                    <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg" style={{ scrollbarWidth: 'thin' }}>
+                    <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg shadow-inner bg-slate-50" style={{ scrollbarWidth: 'thin' }}>
                         {materials.length === 0 ? (
-                            <div className="p-3 text-center text-xs text-slate-400">No items found</div>
+                            <div className="p-3 text-center text-xs text-slate-400">No se encontraron ítems</div>
                         ) : (
                             materials.map(item => (
                                 <div
                                     key={item.id}
                                     onClick={() => setSelectedMaterial(item.id)}
-                                    className={`p-2 text-sm cursor-pointer hover:bg-slate-50 flex justify-between items-center border-b border-slate-50 last:border-0 ${selectedMaterial === item.id ? 'bg-blue-50 border-blue-100' : ''}`}
+                                    className={`p-2 text-sm cursor-pointer hover:bg-white flex justify-between items-center border-b border-slate-100 last:border-0 ${selectedMaterial === item.id ? 'bg-blue-50 border-blue-200' : ''}`}
                                 >
-                                    <span className="truncate flex-1 font-medium text-slate-700">{item.description || item.code}</span>
-                                    <span className="text-xs text-slate-500 ml-2 bg-slate-100 px-1.5 py-0.5 rounded">Stock: {item.quantity}</span>
+                                    <div className="flex flex-col flex-1 truncate mr-2">
+                                        <span className="font-semibold text-slate-800">{item.code}</span>
+                                        <span className="text-[11px] text-slate-500 truncate">{item.description}</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded whitespace-nowrap">Stock: {item.quantity}</span>
                                 </div>
                             ))
                         )}
                     </div>
-                    {selectedMaterial && <div className="text-xs text-blue-600 mt-1 font-medium">Selected ID: {selectedMaterial}</div>}
                 </div>
 
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-blue-600 text-white rounded-lg py-2 font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+                    className="w-full bg-blue-600 text-white rounded-lg py-2.5 font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2 shadow-sm"
                 >
-                    {loading ? "Recording..." : <> <Save className="w-4 h-4" /> Register Usage </>}
+                    {loading ? "Registrando..." : <> <Save className="w-4 h-4" /> Registrar Uso </>}
                 </button>
             </form>
         </div>

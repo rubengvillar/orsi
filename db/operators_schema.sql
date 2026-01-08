@@ -7,17 +7,21 @@ create table if not exists public.operators (
   created_at timestamptz default now()
 );
 
--- 2. ORDER OPERATORS JOIN TABLE
+-- 2. ORDER OPERATORS JOIN TABLE (Updated with Role)
 create table if not exists public.order_operators (
   order_id uuid references public.orders(id) on delete cascade,
   operator_id uuid references public.operators(id) on delete cascade,
-  primary key (order_id, operator_id)
+  role text not null check (role in ('Cutter', 'Installer')), -- Role in this specific order
+  primary key (order_id, operator_id, role)
 );
 
 -- 3. UPDATE ORDERS TABLE
 alter table public.orders 
 add column if not exists manufactured_at date,
-add column if not exists installed_at date;
+add column if not exists installed_at date,
+add column if not exists legacy_order_number text,
+add column if not exists address text,
+add column if not exists estimated_installation_time text;
 
 -- 4. UPDATE MATERIAL USAGE TABLE
 alter table public.material_usage 
