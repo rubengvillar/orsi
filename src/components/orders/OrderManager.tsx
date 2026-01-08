@@ -8,7 +8,14 @@ interface Order {
     client_name: string;
     description: string;
     status: 'Pending' | 'Ready for Cutting' | 'Cut' | 'In Progress' | 'Installed' | 'Completed' | 'Cancelled';
+    manufactured_at: string | null;
+    installed_at: string | null;
     created_at: string;
+}
+
+interface Operator {
+    id: string;
+    full_name: string;
 }
 
 interface OrderManagerProps {
@@ -17,7 +24,9 @@ interface OrderManagerProps {
 
 export default function OrderManager({ canManage }: OrderManagerProps) {
     const [orders, setOrders] = useState<Order[]>([]);
+    const [operators, setOperators] = useState<Operator[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isByStatus, setIsByStatus] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -25,10 +34,14 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
     const [formData, setFormData] = useState({
         client_name: "",
         description: "",
+        manufactured_at: "",
+        installed_at: "",
+        operator_ids: [] as string[]
     });
 
     useEffect(() => {
         fetchOrders();
+        fetchOperators();
     }, []);
 
     const fetchOrders = async () => {
@@ -47,25 +60,46 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
         setLoading(false);
     };
 
+    const fetchOperators = async () => {
+        const { data } = await supabase.from("operators").select("id, full_name").eq("is_active", true);
+        if (data) setOperators(data);
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.client_name) return;
 
-        const { error } = await supabase.from("orders").insert([
+        // 1. Create Order
+        const { data: orderData, error: orderError } = await supabase.from("orders").insert([
             {
                 client_name: formData.client_name,
                 description: formData.description,
                 status: "Pending",
+                manufactured_at: formData.manufactured_at || null,
+                installed_at: formData.installed_at || null,
             },
-        ]);
+        ]).select();
 
-        if (error) {
-            alert("Error creating order: " + error.message);
-        } else {
-            setIsModalOpen(false);
-            setFormData({ client_name: "", description: "" });
-            fetchOrders();
+        if (orderError) {
+            alert("Error creating order: " + orderError.message);
+            return;
         }
+
+        const newOrderId = orderData[0].id;
+
+        // 2. Link Operators
+        if (formData.operator_ids.length > 0) {
+            const operatorLinks = formData.operator_ids.map(opId => ({
+                order_id: newOrderId,
+                operator_id: opId
+            }));
+            const { error: linkError } = await supabase.from("order_operators").insert(operatorLinks);
+            if (linkError) console.error("Error linking operators:", linkError);
+        }
+
+        setIsModalOpen(false);
+        setFormData({ client_name: "", description: "", manufactured_at: "", installed_at: "", operator_ids: [] });
+        fetchOrders();
     };
 
     const getStatusColor = (status: string) => {
@@ -186,12 +220,73 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
                                     Description
                                 </label>
                                 <textarea
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
                                     value={formData.description}
                                     onChange={(e) =>
                                         setFormData({ ...formData, description: e.target.value })
                                     }
                                 />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                                        Fecha Fabricación
+                                    </label>
+                                    <input
+                                        type="date"
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={formData.manufactured_at}
+                                        onChange={(e) =>
+                                            setFormData({ ...formData, manufactured_at: e.target.value })
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                                        Fecha Colocación
+                                    </label>
+                                    <input
+                                        type="date"
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={formData.installed_at}
+                                        onChange={(e) =>
+                                            setFormData({ ...formData, installed_at: e.target.value })
+                                        }
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Asignar Operarios / Colocadores
+                                </label>
+                                <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg p-3 space-y-2">
+                                    {operators.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic text-center py-2">No hay operarios activos</p>
+                                    ) : (
+                                        operators.map((op) => (
+                                            <div key={op.id} className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    id={`op-${op.id}`}
+                                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                    checked={formData.operator_ids.includes(op.id)}
+                                                    onChange={(e) => {
+                                                        const newIds = e.target.checked
+                                                            ? [...formData.operator_ids, op.id]
+                                                            : formData.operator_ids.filter(id => id !== op.id);
+                                                        setFormData({ ...formData, operator_ids: newIds });
+                                                    }}
+                                                />
+                                                <label htmlFor={`op-${op.id}`} className="text-sm text-slate-700 cursor-pointer">
+                                                    {op.full_name}
+                                                </label>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-1">Puedes seleccionar uno o varios operarios.</p>
                             </div>
 
                             {/* Note: Created By is handled by RLS/Trigger or default value using auth.uid() if set in table definition, otherwise we assume default user context works or supabase handles it via RLS policies checking auth.uid() */}

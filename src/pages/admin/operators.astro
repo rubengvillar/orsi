@@ -1,0 +1,18 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import OperatorManager from "../../components/admin/OperatorManager";
+---
+
+<DashboardLayout title="Gestión de Operarios">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-slate-800">
+            Operarios y Colocadores
+        </h1>
+        <p class="text-slate-500">
+            Administra el personal de planta e instalación, asociados o no a un
+            usuario.
+        </p>
+    </div>
+
+    <OperatorManager client:load />
+</DashboardLayout>

@@ -22,12 +22,19 @@ interface MaterialItem {
 
 type MaterialType = 'aluminum_accessory' | 'aluminum_profile' | 'glass_sheet' | 'glass_accessory';
 
+interface Operator {
+    id: string;
+    full_name: string;
+}
+
 export default function MaterialUsageForm({ orderId, onUsageRecorded }: MaterialUsageFormProps) {
     const [loading, setLoading] = useState(false);
     const [workers, setWorkers] = useState<Worker[]>([]);
+    const [operators, setOperators] = useState<Operator[]>([]);
 
     // Selection State
     const [selectedWorker, setSelectedWorker] = useState<string>("");
+    const [selectedOperator, setSelectedOperator] = useState<string>("");
     const [materialType, setMaterialType] = useState<MaterialType>('aluminum_accessory');
     const [searchQuery, setSearchQuery] = useState("");
     const [materials, setMaterials] = useState<MaterialItem[]>([]);
@@ -37,6 +44,7 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
 
     useEffect(() => {
         fetchWorkers();
+        fetchOperators();
     }, []);
 
     useEffect(() => {
@@ -49,6 +57,11 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
         // Ideally filter by role, but for now getting profiles is enough
         const { data } = await supabase.from('profiles').select('id, full_name, email');
         if (data) setWorkers(data);
+    };
+
+    const fetchOperators = async () => {
+        const { data } = await supabase.from('operators').select('id, full_name').eq('is_active', true);
+        if (data) setOperators(data || []);
     };
 
     const fetchMaterials = async () => {
@@ -104,12 +117,13 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
         }
 
         try {
-            const { data, error } = await supabase.rpc('register_material_usage', {
+            const { error } = await supabase.rpc('register_material_usage', {
                 p_order_id: orderId,
                 p_worker_id: selectedWorker,
                 p_material_type: materialType,
                 p_material_id: selectedMaterial,
-                p_quantity: quantity
+                p_quantity: quantity,
+                p_operator_id: selectedOperator || null
             });
 
             if (error) throw error;
@@ -117,6 +131,7 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
             alert("Material usage recorded!");
             setQuantity(1);
             setSelectedMaterial("");
+            setSelectedOperator("");
             onUsageRecorded();
 
         } catch (err: any) {
@@ -144,22 +159,39 @@ export default function MaterialUsageForm({ orderId, onUsageRecorded }: Material
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Worker Selection */}
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Worker</label>
-                    <div className="relative">
-                        <User className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
-                        <select
-                            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white"
-                            value={selectedWorker}
-                            onChange={(e) => setSelectedWorker(e.target.value)}
-                            required
-                        >
-                            <option value="">Select a worker...</option>
-                            {workers.map(w => (
-                                <option key={w.id} value={w.id}>{w.full_name || w.email}</option>
-                            ))}
-                        </select>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Worker (Recorded by)</label>
+                        <div className="relative">
+                            <User className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
+                            <select
+                                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white text-sm"
+                                value={selectedWorker}
+                                onChange={(e) => setSelectedWorker(e.target.value)}
+                                required
+                            >
+                                <option value="">Select...</option>
+                                {workers.map(w => (
+                                    <option key={w.id} value={w.id}>{w.full_name || w.email}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Operator (Delivered to)</label>
+                        <div className="relative">
+                            <User className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
+                            <select
+                                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white text-sm"
+                                value={selectedOperator}
+                                onChange={(e) => setSelectedOperator(e.target.value)}
+                            >
+                                <option value="">Optional...</option>
+                                {operators.map(op => (
+                                    <option key={op.id} value={op.id}>{op.full_name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
 
