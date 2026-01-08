@@ -2,6 +2,7 @@
 import "../index.css";
 import UserMenu from "../components/layout/UserMenu";
 import Sidebar from "../components/layout/Sidebar";
+import MobileMenuButton from "../components/layout/MobileMenuButton";
 
 const { title } = Astro.props;
 const currentPath = Astro.url.pathname;
@@ -17,17 +18,20 @@ const currentPath = Astro.url.pathname;
     </head>
     <body class="bg-gray-50 flex h-screen overflow-hidden">
         <!-- Sidebar container -->
-        <aside class="w-64 bg-slate-900 border-r border-slate-800 hidden md:block">
-            <Sidebar client:load currentPath={currentPath} />
-        </aside>
+        <Sidebar client:load currentPath={currentPath} />
 
         <!-- Main Content -->
         <main class="flex-1 flex flex-col h-full overflow-hidden relative">
             <!-- Header for Mobile / Breadcrumbs -->
             <header
-                class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm"
+                class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-30"
             >
-                <h2 class="text-xl font-semibold text-slate-800">{title}</h2>
+                <div class="flex items-center gap-4">
+                    <MobileMenuButton client:load />
+                    <h2 class="text-xl font-semibold text-slate-800">
+                        {title}
+                    </h2>
+                </div>
                 <div class="flex items-center gap-4">
                     <UserMenu client:load />
                 </div>
