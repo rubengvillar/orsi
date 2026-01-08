@@ -26,25 +26,7 @@ export default function GlassManager() {
 
     const [editingId, setEditingId] = useState<string | null>(null);
 
-    // Auto-generate code and description
-    useEffect(() => {
-        if (!isTypeModalOpen || editingId) return; // Only auto-gen for NEW items
-
-        const thickness = typeForm.thickness_mm?.toString() || "";
-        const color = typeForm.color || "";
-
-        if (thickness) {
-            const colorPrefix = color ? color.substring(0, 3).toUpperCase() : "";
-            const generatedCode = `${thickness}${colorPrefix ? "-" + colorPrefix : ""}`;
-            const generatedDesc = `Vidrio Float ${thickness}mm ${color}`.trim();
-
-            setTypeForm((prev: any) => ({
-                ...prev,
-                code: prev.code === "" || prev.code === undefined || prev.code.match(/^\d+(-[A-Z]{0,3})?$/) ? generatedCode : prev.code,
-                description: prev.description === "" || prev.description === undefined || prev.description?.startsWith("Vidrio Float") ? generatedDesc : prev.description
-            }));
-        }
-    }, [typeForm.thickness_mm, typeForm.color, isTypeModalOpen]);
+    // Auto-generation is now handled by database triggers
 
     useEffect(() => {
         fetchData();
@@ -117,7 +99,10 @@ export default function GlassManager() {
                 // For now we just focus on the type info as per user request.
                 await handleUpdateStock({ id: editingId } as any, initial_stock);
             } else {
-                const { data, error } = await supabase.from('glass_types').insert(payload).select().single();
+                const typePayload = { ...payload };
+                if (!typePayload.code) delete typePayload.code;
+
+                const { data, error } = await supabase.from('glass_types').insert(typePayload).select().single();
                 if (error) throw error;
                 if (data) {
                     await supabase.from('glass_sheets').insert({ glass_type_id: data.id, quantity: initial_stock || 0 });
@@ -281,7 +266,7 @@ export default function GlassManager() {
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Código</label>
-                            <input type="text" required value={typeForm.code} onChange={e => setTypeForm({ ...typeForm, code: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+                            <input type="text" value={typeForm.code} onChange={e => setTypeForm({ ...typeForm, code: e.target.value })} className="w-full px-4 py-2 border rounded-lg" placeholder="Auto-generar" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Espesor (mm)</label>

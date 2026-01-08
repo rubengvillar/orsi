@@ -77,9 +77,12 @@ export default function AccessoriesManager() {
                     .eq('id', editingId);
                 if (error) throw error;
             } else {
+                const payload = { ...formData };
+                if (!payload.code) delete payload.code;
+
                 const { error } = await supabase
                     .from('aluminum_accessories')
-                    .insert(formData);
+                    .insert(payload);
                 if (error) throw error;
             }
             await fetchItems();
@@ -144,10 +147,10 @@ export default function AccessoriesManager() {
                             <label className="block text-sm font-medium text-slate-700 mb-1">Código</label>
                             <input
                                 type="text"
-                                required
                                 value={formData.code}
                                 onChange={e => setFormData({ ...formData, code: e.target.value })}
                                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="Auto-generar"
                             />
                         </div>
                         <div>
