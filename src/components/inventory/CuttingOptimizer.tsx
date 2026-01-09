@@ -3,6 +3,8 @@ import { supabase } from "../../lib/supabase";
 import { Scissors, Box, Layers, Play, CheckCircle2, AlertCircle, FileText, Trash2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { hasPermission } from "../../stores/authStore";
+import { PERMISSIONS } from "../../lib/permissions";
 
 export default function CuttingOptimizer() {
     const [glassTypes, setGlassTypes] = useState<any[]>([]);
@@ -10,12 +12,15 @@ export default function CuttingOptimizer() {
     const [pendingCuts, setPendingCuts] = useState<any[]>([]);
     const [availableStock, setAvailableStock] = useState<{ sheets: number, remnants: any[] }>({ sheets: 0, remnants: [] });
     const [loading, setLoading] = useState(false);
+    const [pendingCutsCounts, setPendingCutsCounts] = useState<Record<string, number>>({});
 
     // Optimization State
     const [selectedCuts, setSelectedCuts] = useState<string[]>([]);
     const [optimizationResult, setOptimizationResult] = useState<any>(null);
     const [showPreview, setShowPreview] = useState(false);
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+
+    const canRun = hasPermission(PERMISSIONS.OPTIMIZER_RUN);
 
     useEffect(() => {
         fetchTypes();
@@ -31,6 +36,18 @@ export default function CuttingOptimizer() {
         const { data } = await supabase.from('glass_types').select('*').order('code');
         setGlassTypes(data || []);
         if (data?.length) setSelectedType(data[0].id);
+
+        // Fetch pending cuts count for all types
+        const { data: allCuts } = await supabase
+            .from('order_cuts')
+            .select('glass_type_id')
+            .eq('status', 'pending');
+
+        const counts: Record<string, number> = {};
+        allCuts?.forEach(cut => {
+            counts[cut.glass_type_id] = (counts[cut.glass_type_id] || 0) + 1;
+        });
+        setPendingCutsCounts(counts);
     };
 
     const fetchData = async () => {
@@ -38,7 +55,7 @@ export default function CuttingOptimizer() {
         // 1. Fetch pending cuts for this type
         const { data: cuts } = await supabase
             .from("order_cuts")
-            .select("*, orders(client_name)")
+            .select("*, orders(client_name, order_number, old_order_number)")
             .eq("glass_type_id", selectedType)
             .eq("status", "pending");
         setPendingCuts(cuts || []);
@@ -125,6 +142,7 @@ export default function CuttingOptimizer() {
                 usedPieces.push({
                     type: 'Rezago',
                     id: rem.id,
+                    location: rem.location || 'Sin ubicación',
                     dimensions: { w: remWidth, h: remHeight },
                     dimText: `${remWidth}x${remHeight}`,
                     cuts: currentRemCuts,
@@ -276,6 +294,19 @@ export default function CuttingOptimizer() {
         const accentColor = [37, 99, 235]; // Blue 600
         const darkColor = [30, 41, 59];
 
+        // Group identical pieces
+        const groupedPieces = optimizationResult.reduce((acc: any[], piece: any) => {
+            const key = `${piece.type}-${piece.dimText}-${JSON.stringify(piece.cuts.map((c: any) => ({ w: c.width_mm, h: c.height_mm, client: c.orders?.client_name })))}`;
+            const existing = acc.find(p => p.key === key);
+            if (existing) {
+                existing.count++;
+                existing.pieces.push(piece);
+            } else {
+                acc.push({ key, count: 1, pieces: [piece], representative: piece });
+            }
+            return acc;
+        }, []);
+
         // --- 1. HEADER ---
         doc.setFillColor(...accentColor);
         doc.rect(0, 0, pageWidth, 40, 'F');
@@ -328,81 +359,107 @@ export default function CuttingOptimizer() {
 
         let yOffset = 90;
 
-        // --- 2. PIECES ---
-        optimizationResult.forEach((piece: any, index: number) => {
+        // Find max dimensions for uniform scaling
+        const maxWidth = Math.max(...optimizationResult.map((p: any) => p.dimensions.w));
+        const maxHeight = Math.max(...optimizationResult.map((p: any) => p.dimensions.h));
+        const diagramW = 130;
+        const diagramH = 90;
+        const globalScaleX = diagramW / maxWidth;
+        const globalScaleY = diagramH / maxHeight;
+        const globalScale = Math.min(globalScaleX, globalScaleY);
+
+        // --- 2. PIECES (GROUPED) ---
+        groupedPieces.forEach((group: any, index: number) => {
+            const piece = group.representative;
             if (yOffset > 220) {
                 doc.addPage();
                 yOffset = 20;
             }
 
-            // Piece Title
+            // Piece Title (no enumeration, show count and location)
             doc.setFillColor(248, 250, 252);
-            doc.rect(14, yOffset - 5, pageWidth - 28, 10, 'F');
+            doc.rect(14, yOffset - 5, pageWidth - 28, 12, 'F');
             doc.setTextColor(...darkColor);
-            doc.setFontSize(12);
+            doc.setFontSize(13);
             doc.setFont("helvetica", "bold");
-            doc.text(`${index + 1}. ORIGEN: ${piece.type.toUpperCase()}`, 14, yOffset + 2);
-            doc.setFontSize(10);
-            doc.text(`${piece.dimText} mm`, pageWidth - 45, yOffset + 2);
+            const location = piece.type === 'Rezago' && piece.location ? ` - Ubicación: ${piece.location}` : '';
+            doc.text(`ORIGEN: ${piece.type.toUpperCase()}${location}`, 14, yOffset + 2);
+            doc.setFontSize(11);
+            doc.text(`${piece.dimText} mm`, pageWidth - 60, yOffset + 2);
+            if (group.count > 1) {
+                doc.setFontSize(10);
+                doc.setTextColor(220, 38, 38); // Red for count
+                doc.text(`x${group.count}`, pageWidth - 20, yOffset + 2);
+                doc.setTextColor(...darkColor);
+            }
 
-            yOffset += 10;
+            yOffset += 12;
 
-            // DRAW DIAGRAM
-            const diagramW = 120; // max width in mm
-            const diagramH = 70; // max height in mm
+            // DRAW DIAGRAM with uniform scale
             const startX = 14;
             const startY = yOffset;
 
+            // Use uniform scale for all pieces
+            const scaledW = piece.dimensions.w * globalScale;
+            const scaledH = piece.dimensions.h * globalScale;
+
             // Outer Container Rect
             doc.setDrawColor(203, 213, 225);
-            doc.setLineWidth(0.2);
-            doc.rect(startX, startY, diagramW, diagramH);
-
-            // Scaling factors
-            const scaleX = diagramW / piece.dimensions.w;
-            const scaleY = diagramH / piece.dimensions.h;
+            doc.setLineWidth(0.3);
+            doc.rect(startX, startY, scaledW, scaledH);
 
             piece.cuts.forEach((cut: any) => {
-                const cw = cut.width_mm * scaleX;
-                const ch = cut.height_mm * scaleY;
-                const cx = startX + (cut.posX * scaleX);
-                const cy = startY + (cut.posY * scaleY);
+                const cw = cut.width_mm * globalScale;
+                const ch = cut.height_mm * globalScale;
+                const cx = startX + (cut.posX * globalScale);
+                const cy = startY + (cut.posY * globalScale);
 
                 // Draw Cut Rect
                 doc.setDrawColor(37, 99, 235);
                 doc.setFillColor(239, 246, 255);
+                doc.setLineWidth(0.4);
                 doc.rect(cx, cy, cw, ch, 'FD');
 
-                // Draw Inner Labels if space allows
-                if (cw > 15 && ch > 8) {
-                    doc.setFontSize(5);
+                // Draw Inner Labels with better visibility
+                if (cw > 12 && ch > 6) {
+                    doc.setFontSize(7);
+                    doc.setFont("helvetica", "bold");
                     doc.setTextColor(...accentColor);
-                    doc.text(`${cut.width_mm}x${cut.height_mm}`, cx + 2, cy + 4);
-                    doc.setFontSize(4);
-                    doc.setTextColor(100, 116, 139);
-                    doc.text(cut.orders?.client_name?.substring(0, 15) || 'Stock', cx + 2, cy + 8);
+                    doc.text(`${cut.width_mm}x${cut.height_mm}`, cx + 1, cy + 4);
+                    if (cw > 20 && ch > 10) {
+                        doc.setFontSize(6);
+                        doc.setFont("helvetica", "normal");
+                        doc.setTextColor(100, 116, 139);
+                        doc.text(cut.orders?.client_name?.substring(0, 12) || 'Stock', cx + 1, cy + 8);
+                    }
                 }
             });
 
-            // Summary Table next to diagram
-            const tableData = piece.cuts.map((c: any, i: number) => [
-                i + 1,
+            // Summary Table next to diagram (no enumeration, with order numbers)
+            const tableData = piece.cuts.map((c: any) => [
                 c.width_mm + "x" + c.height_mm,
-                c.orders?.client_name || '-'
+                c.quantity || 1,
+                c.orders?.client_name || '-',
+                c.orders?.order_number || c.orders?.old_order_number || '-'
             ]);
 
             autoTable(doc, {
                 startY: yOffset,
-                margin: { left: startX + diagramW + 5 },
-                tableWidth: pageWidth - (startX + diagramW + 20),
-                head: [['#', 'Medidas', 'Cliente']],
+                margin: { left: startX + scaledW + 5 },
+                tableWidth: pageWidth - (startX + scaledW + 20),
+                head: [['Medidas', 'Cant', 'Cliente', 'N° Orden']],
                 body: tableData,
                 theme: 'grid',
-                styles: { fontSize: 7, cellPadding: 1 },
-                headStyles: { fillColor: [71, 85, 105] }
+                styles: { fontSize: 8, cellPadding: 1.5, font: 'helvetica' },
+                headStyles: { fillColor: [71, 85, 105], fontStyle: 'bold', fontSize: 9 },
+                columnStyles: {
+                    0: { fontStyle: 'bold', halign: 'center' },
+                    1: { halign: 'center', fontStyle: 'bold' },
+                    3: { halign: 'center' }
+                }
             });
 
-            yOffset = Math.max((doc as any).lastAutoTable.finalY + 15, startY + diagramH + 15);
+            yOffset = Math.max((doc as any).lastAutoTable.finalY + 15, startY + scaledH + 15);
         });
 
         if (returnBase64) {
@@ -472,11 +529,17 @@ export default function CuttingOptimizer() {
                 <select
                     value={selectedType}
                     onChange={e => setSelectedType(e.target.value)}
-                    className="w-full md:w-64 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full md:w-64 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
                 >
-                    {glassTypes.map(t => (
-                        <option key={t.id} value={t.id}>{t.code} - {t.thickness_mm}mm {t.color}</option>
-                    ))}
+                    {glassTypes.map(t => {
+                        const pendingCount = pendingCutsCounts[t.id] || 0;
+                        return (
+                            <option key={t.id} value={t.id}>
+                                {t.code} - {t.thickness_mm}mm {t.color}
+                                {pendingCount > 0 ? ` (${pendingCount} pendientes)` : ''}
+                            </option>
+                        );
+                    })}
                 </select>
             </div>
 
@@ -503,7 +566,9 @@ export default function CuttingOptimizer() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {pendingCuts.map(cut => (
+                                    {loading && pendingCuts.length === 0 ? (
+                                        <tr><td colSpan={4} className="px-4 py-12 text-center text-slate-400">Cargando...</td></tr>
+                                    ) : pendingCuts.map(cut => (
                                         <tr
                                             key={cut.id}
                                             className={`cursor-pointer hover:bg-blue-50 transition-colors ${selectedCuts.includes(cut.id) ? 'bg-blue-50' : ''}`}
@@ -517,7 +582,7 @@ export default function CuttingOptimizer() {
                                             <td className="px-4 py-3 text-center font-bold">{cut.quantity}</td>
                                         </tr>
                                     ))}
-                                    {pendingCuts.length === 0 && (
+                                    {pendingCuts.length === 0 && !loading && (
                                         <tr><td colSpan={4} className="px-4 py-12 text-center text-slate-400">No hay cortes pendientes para este tipo.</td></tr>
                                     )}
                                 </tbody>
@@ -527,10 +592,10 @@ export default function CuttingOptimizer() {
 
                     <button
                         onClick={runOptimizer}
-                        disabled={selectedCuts.length === 0 || loading}
+                        disabled={selectedCuts.length === 0 || loading || !canRun}
                         className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all font-semibold shadow-md"
                     >
-                        <Play className="w-5 h-5" /> Calcular Corte Óptimo
+                        <Play className="w-5 h-5" /> {canRun ? 'Calcular Corte Óptimo' : 'Sin Permiso para Calcular'}
                     </button>
                 </div>
 
@@ -630,10 +695,10 @@ export default function CuttingOptimizer() {
                             <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-2">
                                 <button
                                     onClick={handleConfirmCuts}
-                                    disabled={loading}
-                                    className="w-full bg-emerald-600 text-white py-2 rounded-lg hover:bg-emerald-700 font-bold shadow-sm transition-all"
+                                    disabled={loading || !canRun}
+                                    className="w-full bg-emerald-600 text-white py-2 rounded-lg hover:bg-emerald-700 font-bold shadow-sm transition-all disabled:opacity-50"
                                 >
-                                    {loading ? "Procesando..." : "Confirmar y Descontar Todo"}
+                                    {loading ? "Procesando..." : (canRun ? "Confirmar y Descontar Todo" : "Solo Lectura")}
                                 </button>
                                 <button
                                     onClick={() => setOptimizationResult(null)}

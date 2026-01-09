@@ -4,6 +4,9 @@ import type { AluminumProfile } from '../../types/database';
 import { StockTable, type Column } from './StockTable';
 import { Modal } from '../ui/Modal';
 import { Plus, Package } from 'lucide-react';
+import { useStore } from '@nanostores/react';
+import { hasPermission } from '../../stores/authStore';
+import { PERMISSIONS } from '../../lib/permissions';
 
 export default function ProfilesManager() {
     const [items, setItems] = useState<AluminumProfile[]>([]);
@@ -14,10 +17,11 @@ export default function ProfilesManager() {
     });
     const [editingId, setEditingId] = useState<string | null>(null);
 
+    const canWrite = hasPermission(PERMISSIONS.INVENTORY_PROFILES_WRITE);
+
     const columns: Column<AluminumProfile>[] = [
         { key: 'code', label: 'Código' },
         { key: 'typology', label: 'Tipología' },
-        { key: 'color', label: 'Color' },
         { key: 'color', label: 'Color' },
         {
             key: 'quantity',
@@ -25,22 +29,23 @@ export default function ProfilesManager() {
             render: (val, item) => (
                 <div className="flex items-center gap-2">
                     <span className="font-semibold">{val}</span>
-                    <button
-                        onClick={() => {
-                            const qty = prompt('Nuevo stock de barras:', String(val));
-                            if (qty !== null && !isNaN(parseInt(qty))) {
-                                handleUpdateStock(item, parseInt(qty));
-                            }
-                        }}
-                        className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-600 border border-slate-300 transition-colors"
-                        title="Ajuste Rápido"
-                    >
-                        Adjust
-                    </button>
+                    {canWrite && (
+                        <button
+                            onClick={() => {
+                                const qty = prompt('Nuevo stock de barras:', String(val));
+                                if (qty !== null && !isNaN(parseInt(qty))) {
+                                    handleUpdateStock(item, parseInt(qty));
+                                }
+                            }}
+                            className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-600 border border-slate-300 transition-colors"
+                            title="Ajuste Rápido"
+                        >
+                            Adjust
+                        </button>
+                    )}
                 </div>
             )
         },
-        { key: 'description', label: 'Descripción' },
         { key: 'description', label: 'Descripción' },
         { key: 'min_stock', label: 'Mínimo' },
     ];
@@ -118,13 +123,15 @@ export default function ProfilesManager() {
                     <Package className="w-5 h-5 text-blue-600" />
                     Inventario de Perfiles
                 </h2>
-                <button
-                    onClick={() => handleOpenModal()}
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                    <Plus className="w-4 h-4" />
-                    Nuevo Perfil
-                </button>
+                {canWrite && (
+                    <button
+                        onClick={() => handleOpenModal()}
+                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Nuevo Perfil
+                    </button>
+                )}
             </div>
 
             <StockTable
@@ -133,6 +140,8 @@ export default function ProfilesManager() {
                 onEdit={handleOpenModal}
                 onDelete={handleDelete}
                 isLoading={loading}
+                canEdit={canWrite}
+                canDelete={canWrite}
             />
 
             <Modal

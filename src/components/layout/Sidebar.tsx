@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { useStore } from "@nanostores/react";
 import { isMobileMenuOpen, closeMobileMenu } from "../../stores/uiStore";
+import { userPermissions, userRole } from "../../stores/authStore";
+import { PERMISSIONS } from "../../lib/permissions";
 
 interface SidebarProps {
     currentPath: string;
@@ -22,6 +24,7 @@ interface NavItem {
     label: string;
     href: string;
     icon: any;
+    permission?: string;
 }
 
 interface NavCategory {
@@ -31,52 +34,67 @@ interface NavCategory {
 }
 
 export default function Sidebar({ currentPath }: SidebarProps) {
+    const $permissions = useStore(userPermissions);
+    const $role = useStore(userRole);
+
+    const hasPermission = (perm?: string) => {
+        if (!perm) return true;
+        if ($role === 'Admin' || $role === 'Administrador') return true;
+        return $permissions.includes(perm);
+    };
+
     // Categories and Items
     const categories: NavCategory[] = [
         {
             label: "Principal",
             icon: LayoutDashboard,
             items: [
-                { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-                { label: "Ordenes", href: "/orders", icon: Box },
+                { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, permission: PERMISSIONS.DASHBOARD },
+                { label: "Ordenes", href: "/orders", icon: Box, permission: PERMISSIONS.ORDERS_VIEW },
             ]
         },
         {
             label: "Inventario",
             icon: Package,
             items: [
-                { label: "Accesorios", href: "/inventory/accessories", icon: Package },
-                { label: "Perfiles", href: "/inventory/profiles", icon: Package },
-                { label: "Vidrios", href: "/inventory/glass", icon: Package },
-                { label: "Insumos Vidrio", href: "/inventory/glass-accessories", icon: Package },
+                { label: "Accesorios", href: "/inventory/accessories", icon: Package, permission: PERMISSIONS.INVENTORY_ACCESSORIES_VIEW },
+                { label: "Perfiles", href: "/inventory/profiles", icon: Package, permission: PERMISSIONS.INVENTORY_PROFILES_VIEW },
+                { label: "Vidrios", href: "/inventory/glass", icon: Package, permission: PERMISSIONS.INVENTORY_GLASS_VIEW },
+                { label: "Insumos Vidrio", href: "/inventory/glass-accessories", icon: Package, permission: PERMISSIONS.INVENTORY_GLASS_ACCESSORIES_VIEW },
             ]
         },
         {
             label: "Cortes",
             icon: Scissors,
             items: [
-                { label: "Optimizar Cortes", href: "/inventory/optimizer", icon: Scissors },
-                { label: "Plan de Cortes", href: "/inventory/cuts", icon: Scissors },
+                { label: "Optimizar Cortes", href: "/inventory/optimizer", icon: Scissors, permission: PERMISSIONS.OPTIMIZER_VIEW },
+                { label: "Plan de Cortes", href: "/inventory/cuts", icon: Scissors, permission: PERMISSIONS.CUTS_VIEW },
             ]
         },
         {
             label: "Administración",
             icon: Shield,
             items: [
-                { label: "Cuentas de Usuario", href: "/admin/users", icon: Users },
-                { label: "Operarios", href: "/admin/operators", icon: Users },
-                { label: "Roles", href: "/admin/roles", icon: Shield },
-                { label: "Permisos", href: "/admin/permissions", icon: Shield },
-                { label: "Auditoría", href: "/admin/audit", icon: FileText },
+                { label: "Cuentas de Usuario", href: "/admin/users", icon: Users, permission: PERMISSIONS.ADMIN_USERS_VIEW },
+                { label: "Operarios", href: "/admin/operators", icon: Users, permission: PERMISSIONS.ADMIN_OPERATORS_VIEW },
+                { label: "Roles", href: "/admin/roles", icon: Shield, permission: PERMISSIONS.ADMIN_ROLES_VIEW },
+                { label: "Permisos", href: "/admin/permissions", icon: Shield, permission: PERMISSIONS.ADMIN_PERMISSIONS_VIEW },
+                { label: "Auditoría", href: "/admin/audit", icon: FileText, permission: PERMISSIONS.ADMIN_AUDIT_VIEW },
             ]
         }
     ];
+
+    // Filter categories and items
+    const filteredCategories = categories.map(cat => ({
+        ...cat,
+        items: cat.items.filter(item => hasPermission(item.permission))
+    })).filter(cat => cat.items.length > 0);
 
     // State to track expanded categories
     // Initialize with all expanded or only the one containing the current path
     const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
         const initialState: Record<string, boolean> = {};
-        categories.forEach(cat => {
+        filteredCategories.forEach(cat => {
             const hasActiveItem = cat.items.some(item => currentPath.startsWith(item.href));
             initialState[cat.label] = hasActiveItem || cat.label === "Principal";
         });
@@ -121,7 +139,7 @@ export default function Sidebar({ currentPath }: SidebarProps) {
 
                 <nav className="flex-1 overflow-y-auto py-4 scrollbar-thin scrollbar-thumb-slate-700">
                     <div className="px-3 space-y-2">
-                        {categories.map((category) => {
+                        {filteredCategories.map((category) => {
                             const isExpanded = expanded[category.label];
                             const hasActiveItem = category.items.some(item => currentPath.startsWith(item.href));
 

@@ -65,6 +65,20 @@ async function fetchUserRole(userId: string) {
     }
 }
 
+/**
+ * Checks if the current user has a specific permission.
+ * Works both with individual permissions and admin override (if applicable).
+ */
+export function hasPermission(permissionCode: string): boolean {
+    const perms = userPermissions.get();
+    const role = userRole.get();
+
+    // Admin always has all permissions
+    if (role === 'Admin' || role === 'Administrador') return true;
+
+    return perms.includes(permissionCode);
+}
+
 // Subscribe to auth changes
 supabase.auth.onAuthStateChange((_event, session) => {
     if (session?.user) {

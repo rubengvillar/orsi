@@ -13,10 +13,12 @@ interface StockTableProps<T> {
     onEdit: (item: T) => void;
     onDelete: (item: T) => void;
     isLoading?: boolean;
+    canEdit?: boolean;
+    canDelete?: boolean;
 }
 
 export function StockTable<T extends { id: string; min_stock?: number; quantity: number }>({
-    data, columns, onEdit, onDelete, isLoading
+    data, columns, onEdit, onDelete, isLoading, canEdit = true, canDelete = true
 }: StockTableProps<T>) {
     const [searchTerm, setSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState<{ key: keyof T; direction: 'asc' | 'desc' } | null>(null);
@@ -84,7 +86,7 @@ export function StockTable<T extends { id: string; min_stock?: number; quantity:
                                     </div>
                                 </th>
                             ))}
-                            <th className="px-6 py-3 text-right">Acciones</th>
+                            {(canEdit || canDelete) && <th className="px-6 py-3 text-right">Acciones</th>}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -103,20 +105,26 @@ export function StockTable<T extends { id: string; min_stock?: number; quantity:
                                             )}
                                         </td>
                                     ))}
-                                    <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                        <button onClick={() => onEdit(item)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
-                                        <button onClick={() => onDelete(item)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </td>
+                                    {(canEdit || canDelete) && (
+                                        <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                            {canEdit && (
+                                                <button onClick={() => onEdit(item)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                            {canDelete && (
+                                                <button onClick={() => onDelete(item)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </td>
+                                    )}
                                 </tr>
                             );
                         })}
                         {sortedData.length === 0 && (
                             <tr>
-                                <td colSpan={columns.length + 1} className="px-6 py-8 text-center text-slate-500">
+                                <td colSpan={columns.length + ((canEdit || canDelete) ? 1 : 0)} className="px-6 py-8 text-center text-slate-500">
                                     No se encontraron resultados
                                 </td>
                             </tr>

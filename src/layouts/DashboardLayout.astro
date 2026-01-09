@@ -3,6 +3,7 @@ import "../index.css";
 import UserMenu from "../components/layout/UserMenu";
 import Sidebar from "../components/layout/Sidebar";
 import MobileMenuButton from "../components/layout/MobileMenuButton";
+import PageGuard from "../components/layout/PageGuard";
 
 const { title } = Astro.props;
 const currentPath = Astro.url.pathname;
@@ -39,7 +40,9 @@ const currentPath = Astro.url.pathname;
 
             <!-- Page Content -->
             <div class="flex-1 overflow-y-auto p-6">
-                <slot />
+                <PageGuard client:load currentPath={currentPath}>
+                    <slot />
+                </PageGuard>
             </div>
         </main>
     </body>

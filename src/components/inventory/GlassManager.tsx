@@ -4,6 +4,9 @@ import type { GlassType, GlassRemnant } from '../../types/database';
 import { StockTable, type Column } from './StockTable';
 import { Modal } from '../ui/Modal';
 import { Plus, Package, Layers, Grid } from 'lucide-react';
+import { useStore } from '@nanostores/react';
+import { hasPermission } from '../../stores/authStore';
+import { PERMISSIONS } from '../../lib/permissions';
 
 export default function GlassManager() {
     const [activeTab, setActiveTab] = useState<'types' | 'remnants'>('types');
@@ -25,6 +28,8 @@ export default function GlassManager() {
     });
 
     const [editingId, setEditingId] = useState<string | null>(null);
+
+    const canWrite = hasPermission(PERMISSIONS.INVENTORY_GLASS_WRITE);
 
     // Auto-generation is now handled by database triggers
 
@@ -178,15 +183,17 @@ export default function GlassManager() {
             key: 'quantity', label: 'Stock Hojas Enteras', render: (val, item) => (
                 <div className="flex items-center gap-2">
                     <span className="font-semibold">{val}</span>
-                    <button
-                        onClick={() => {
-                            const qty = prompt('Nuevo stock de hojas enteras:', val);
-                            if (qty !== null) handleUpdateStock(item, parseInt(qty) || 0);
-                        }}
-                        className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-600"
-                    >
-                        Ajustar
-                    </button>
+                    {canWrite && (
+                        <button
+                            onClick={() => {
+                                const qty = prompt('Nuevo stock de hojas enteras:', val);
+                                if (qty !== null) handleUpdateStock(item, parseInt(qty) || 0);
+                            }}
+                            className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-600"
+                        >
+                            Ajustar
+                        </button>
+                    )}
                 </div>
             )
         },
@@ -225,13 +232,15 @@ export default function GlassManager() {
                     </div>
                 </div>
 
-                <button
-                    onClick={() => activeTab === 'types' ? handleOpenTypeModal() : handleOpenRemnantModal()}
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                    <Plus className="w-4 h-4" />
-                    {activeTab === 'types' ? 'Nuevo Tipo Vidrio' : 'Cargar Rezago'}
-                </button>
+                {canWrite && (
+                    <button
+                        onClick={() => activeTab === 'types' ? handleOpenTypeModal() : handleOpenRemnantModal()}
+                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                    >
+                        <Plus className="w-4 h-4" />
+                        {activeTab === 'types' ? 'Nuevo Tipo Vidrio' : 'Cargar Rezago'}
+                    </button>
+                )}
             </div>
 
             {activeTab === 'types' ? (
@@ -249,6 +258,8 @@ export default function GlassManager() {
                         }
                     }}
                     isLoading={loading}
+                    canEdit={canWrite}
+                    canDelete={canWrite}
                 />
             ) : (
                 <StockTable
@@ -257,6 +268,8 @@ export default function GlassManager() {
                     onEdit={handleOpenRemnantModal}
                     onDelete={handleDeleteRemnant}
                     isLoading={loading}
+                    canEdit={canWrite}
+                    canDelete={canWrite}
                 />
             )}
 

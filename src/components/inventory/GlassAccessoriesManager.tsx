@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import type { GlassAccessory } from '../../types/database';
 import { StockTable, type Column } from './StockTable';
 import { Modal } from '../ui/Modal';
 import { Plus, Package } from 'lucide-react';
+import { useStore } from '@nanostores/react';
+import { hasPermission } from '../../stores/authStore';
+import { PERMISSIONS } from '../../lib/permissions';
 
 export default function GlassAccessoriesManager() {
     const [items, setItems] = useState<GlassAccessory[]>([]);
@@ -14,9 +17,10 @@ export default function GlassAccessoriesManager() {
     });
     const [editingId, setEditingId] = useState<string | null>(null);
 
+    const canWrite = hasPermission(PERMISSIONS.INVENTORY_GLASS_ACCESSORIES_WRITE);
+
     const columns: Column<GlassAccessory>[] = [
         { key: 'code', label: 'Código' },
-        { key: 'description', label: 'Descripción' },
         { key: 'description', label: 'Descripción' },
         {
             key: 'quantity',
@@ -24,22 +28,23 @@ export default function GlassAccessoriesManager() {
             render: (val, item) => (
                 <div className="flex items-center gap-2">
                     <span className="font-semibold">{val}</span>
-                    <button
-                        onClick={() => {
-                            const qty = prompt('Nuevo stock:', String(val));
-                            if (qty !== null && !isNaN(parseInt(qty))) {
-                                handleUpdateStock(item, parseInt(qty));
-                            }
-                        }}
-                        className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-600 border border-slate-300 transition-colors"
-                        title="Ajuste Rápido"
-                    >
-                        Adjust
-                    </button>
+                    {canWrite && (
+                        <button
+                            onClick={() => {
+                                const qty = prompt('Nuevo stock:', String(val));
+                                if (qty !== null && !isNaN(parseInt(qty))) {
+                                    handleUpdateStock(item, parseInt(qty));
+                                }
+                            }}
+                            className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-600 border border-slate-300 transition-colors"
+                            title="Ajuste Rápido"
+                        >
+                            Adjust
+                        </button>
+                    )}
                 </div>
             )
         },
-        { key: 'min_stock', label: 'Stock Mínimo' },
         { key: 'min_stock', label: 'Stock Mínimo' },
     ];
 
@@ -119,13 +124,15 @@ export default function GlassAccessoriesManager() {
                     <Package className="w-5 h-5 text-blue-600" />
                     Insumos de Vidrio
                 </h2>
-                <button
-                    onClick={() => handleOpenModal()}
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                    <Plus className="w-4 h-4" />
-                    Nuevo Insumo
-                </button>
+                {canWrite && (
+                    <button
+                        onClick={() => handleOpenModal()}
+                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Nuevo Insumo
+                    </button>
+                )}
             </div>
 
             <StockTable
@@ -134,6 +141,8 @@ export default function GlassAccessoriesManager() {
                 onEdit={handleOpenModal}
                 onDelete={handleDelete}
                 isLoading={loading}
+                canEdit={canWrite}
+                canDelete={canWrite}
             />
 
             <Modal
