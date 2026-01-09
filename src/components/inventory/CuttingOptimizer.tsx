@@ -260,9 +260,9 @@ export default function CuttingOptimizer() {
             const pdfOutput = generatePDF(true); // Return as base64
             const metadata = {
                 total_pieces: optimizationResult.length,
-                sheets_used: optimizationResult.filter(p => p.type === 'Hoja Entera').length,
-                remnants_used: optimizationResult.filter(p => p.type === 'Rezago').length,
-                total_cuts: optimizationResult.reduce((sum, p) => sum + p.cuts.length, 0)
+                sheets_used: optimizationResult.filter((p: any) => p.type === 'Hoja Entera').length,
+                remnants_used: optimizationResult.filter((p: any) => p.type === 'Rezago').length,
+                total_cuts: optimizationResult.reduce((sum: any, p: any) => sum + p.cuts.length, 0)
             };
 
             await supabase.from('optimization_logs').insert({
@@ -308,7 +308,7 @@ export default function CuttingOptimizer() {
         }, []);
 
         // --- 1. HEADER ---
-        doc.setFillColor(...accentColor);
+        doc.setFillColor(accentColor.toString());
         doc.rect(0, 0, pageWidth, 40, 'F');
 
         doc.setTextColor(255, 255, 255);
@@ -322,9 +322,9 @@ export default function CuttingOptimizer() {
         doc.text(`Vidrio: ${type?.code} - ${type?.thickness_mm}mm ${type?.color}`, 14, 33);
 
         // Global Stats Summary
-        const totalCuts = optimizationResult.reduce((sum, p) => sum + p.cuts.length, 0);
-        const sheetsUsed = optimizationResult.filter(p => p.type === 'Hoja Entera').length;
-        const remnantsUsed = optimizationResult.filter(p => p.type === 'Rezago').length;
+        const totalCuts = optimizationResult.reduce((sum: any, p: any) => sum + p.cuts.length, 0);
+        const sheetsUsed = optimizationResult.filter((p: any) => p.type === 'Hoja Entera').length;
+        const remnantsUsed = optimizationResult.filter((p: any) => p.type === 'Rezago').length;
 
         // Area Calculations
         let totalAreaAvailable = 0;
@@ -340,7 +340,7 @@ export default function CuttingOptimizer() {
 
         doc.setFillColor(255, 255, 255);
         doc.roundedRect(14, 45, pageWidth - 28, 32, 3, 3, 'F');
-        doc.setTextColor(...darkColor);
+        doc.setTextColor(darkColor.toString());
         doc.setFontSize(9);
         doc.text("Resumen de Recursos y Eficiencia:", 20, 52);
 
@@ -379,7 +379,7 @@ export default function CuttingOptimizer() {
             // Piece Title (no enumeration, show count and location)
             doc.setFillColor(248, 250, 252);
             doc.rect(14, yOffset - 5, pageWidth - 28, 12, 'F');
-            doc.setTextColor(...darkColor);
+            doc.setTextColor(darkColor.toString());
             doc.setFontSize(13);
             doc.setFont("helvetica", "bold");
             const location = piece.type === 'Rezago' && piece.location ? ` - Ubicación: ${piece.location}` : '';
@@ -390,7 +390,7 @@ export default function CuttingOptimizer() {
                 doc.setFontSize(10);
                 doc.setTextColor(220, 38, 38); // Red for count
                 doc.text(`x${group.count}`, pageWidth - 20, yOffset + 2);
-                doc.setTextColor(...darkColor);
+                doc.setTextColor(darkColor.toString());
             }
 
             yOffset += 12;
@@ -424,7 +424,7 @@ export default function CuttingOptimizer() {
                 if (cw > 12 && ch > 6) {
                     doc.setFontSize(7);
                     doc.setFont("helvetica", "bold");
-                    doc.setTextColor(...accentColor);
+                    doc.setTextColor(accentColor.toString());
                     doc.text(`${cut.width_mm}x${cut.height_mm}`, cx + 1, cy + 4);
                     if (cw > 20 && ch > 10) {
                         doc.setFontSize(6);
