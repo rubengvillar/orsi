@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
-import { Scissors, Plus, Trash2, Layers } from "lucide-react";
+import { Scissors, Plus, Trash2, Layers, CheckCircle } from "lucide-react";
 import { Modal } from "../ui/Modal";
 
 interface OrderCutsListProps {
@@ -73,6 +73,18 @@ export default function OrderCutsList({ orderId }: OrderCutsListProps) {
         fetchData();
     };
 
+    const handleStatusChange = async (id: string, newStatus: string) => {
+        // Optimistic update
+        setCuts(cuts.map(c => c.id === id ? { ...c, status: newStatus } : c));
+
+        const { error } = await supabase.from("order_cuts").update({ status: newStatus }).eq("id", id);
+
+        if (error) {
+            alert("Error updating status: " + error.message);
+            fetchData(); // Revert on error
+        }
+    };
+
     return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
@@ -119,10 +131,33 @@ export default function OrderCutsList({ orderId }: OrderCutsListProps) {
                                         {cut.status === 'pending' ? 'Pendiente' : 'Cortado'}
                                     </span>
                                 </td>
-                                <td className="px-4 py-3 text-right">
+                                <td className="px-4 py-3 text-right flex justify-end gap-2">
                                     {cut.status === 'pending' && (
-                                        <button onClick={() => handleDelete(cut.id)} className="text-slate-400 hover:text-red-500 transition-colors">
-                                            <Trash2 className="w-4 h-4" />
+                                        <>
+                                            <button
+                                                onClick={() => handleStatusChange(cut.id, 'cut')}
+                                                className="text-emerald-500 hover:text-emerald-700 transition-colors p-1 hover:bg-emerald-50 rounded"
+                                                title="Marcar como Cortado"
+                                            >
+                                                <CheckCircle className="w-4 h-4" />
+                                            </button>
+                                            <div className="w-px h-4 bg-slate-200 my-auto"></div>
+                                            <button
+                                                onClick={() => handleDelete(cut.id)}
+                                                className="text-slate-400 hover:text-red-500 transition-colors p-1 hover:bg-red-50 rounded"
+                                                title="Eliminar"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </>
+                                    )}
+                                    {cut.status === 'cut' && (
+                                        <button
+                                            onClick={() => handleStatusChange(cut.id, 'pending')}
+                                            className="text-slate-300 hover:text-amber-500 transition-colors p-1 hover:bg-amber-50 rounded"
+                                            title="Volver a Pendiente"
+                                        >
+                                            <Layers className="w-4 h-4" />
                                         </button>
                                     )}
                                 </td>
