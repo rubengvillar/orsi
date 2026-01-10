@@ -156,13 +156,21 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
 
     const handleStatusChange = async (newStatus: string) => {
         setLoading(true);
+
+        const updates: any = { status: newStatus };
+
+        // Auto-update manufacturing date if status is 'Cut'
+        if (newStatus === 'Cut') {
+            updates.manufactured_at = new Date().toISOString();
+        }
+
         const { error } = await supabase
             .from("orders")
-            .update({ status: newStatus })
+            .update(updates)
             .eq("id", orderId);
 
         if (error) alert(error.message);
-        else setOrder({ ...order, status: newStatus });
+        else setOrder({ ...order, ...updates });
         setLoading(false);
     };
 
@@ -378,13 +386,13 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
                                     <span className="block text-[10px] uppercase font-bold text-slate-400">Fabricación</span>
                                     {isEditing ? (
                                         <input
-                                            type="date"
+                                            type="datetime-local"
                                             className="w-full px-1 py-0.5 border border-slate-300 rounded text-xs"
-                                            value={editFormData.manufactured_at}
-                                            onChange={(e) => setEditFormData({ ...editFormData, manufactured_at: e.target.value })}
+                                            value={editFormData.manufactured_at ? new Date(editFormData.manufactured_at).toISOString().slice(0, 16) : ''}
+                                            onChange={(e) => setEditFormData({ ...editFormData, manufactured_at: new Date(e.target.value).toISOString() })}
                                         />
                                     ) : (
-                                        order.manufactured_at ? new Date(order.manufactured_at).toLocaleDateString() : 'Pendiente'
+                                        order.manufactured_at ? new Date(order.manufactured_at).toLocaleString() : 'Pendiente'
                                     )}
                                 </div>
                             </div>
@@ -394,13 +402,13 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
                                     <span className="block text-[10px] uppercase font-bold text-slate-400">Colocación</span>
                                     {isEditing ? (
                                         <input
-                                            type="date"
+                                            type="datetime-local"
                                             className="w-full px-1 py-0.5 border border-slate-300 rounded text-xs"
-                                            value={editFormData.installed_at}
-                                            onChange={(e) => setEditFormData({ ...editFormData, installed_at: e.target.value })}
+                                            value={editFormData.installed_at ? new Date(editFormData.installed_at).toISOString().slice(0, 16) : ''}
+                                            onChange={(e) => setEditFormData({ ...editFormData, installed_at: new Date(e.target.value).toISOString() })}
                                         />
                                     ) : (
-                                        order.installed_at ? new Date(order.installed_at).toLocaleDateString() : 'Pendiente'
+                                        order.installed_at ? new Date(order.installed_at).toLocaleString() : 'Pendiente'
                                     )}
                                 </div>
                             </div>

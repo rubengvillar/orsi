@@ -79,6 +79,7 @@ export default function Sidebar({ currentPath }: SidebarProps) {
                 { label: "Operarios", href: "/admin/operators", icon: Users, permission: PERMISSIONS.ADMIN_OPERATORS_VIEW },
                 { label: "Roles", href: "/admin/roles", icon: Shield, permission: PERMISSIONS.ADMIN_ROLES_VIEW },
                 { label: "Permisos", href: "/admin/permissions", icon: Shield, permission: PERMISSIONS.ADMIN_PERMISSIONS_VIEW },
+                { label: "Estados de Orden", href: "/admin/order-statuses", icon: Box, permission: PERMISSIONS.ADMIN_ORDER_STATUSES_VIEW },
                 { label: "Auditoría", href: "/admin/audit", icon: FileText, permission: PERMISSIONS.ADMIN_AUDIT_VIEW },
             ]
         }

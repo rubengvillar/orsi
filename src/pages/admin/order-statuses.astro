@@ -1,0 +1,24 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import OrderStatusManager from "../../components/admin/OrderStatusManager";
+import { PERMISSIONS } from "../../lib/permissions";
+---
+
+<DashboardLayout
+    title="Gestión de Estados de Orden"
+    permission={PERMISSIONS.ADMIN_ORDER_STATUSES_VIEW}
+>
+    <div class="space-y-6">
+        <div class="flex items-center gap-3 text-slate-500 text-sm">
+            <a href="/dashboard" class="hover:text-blue-600 transition-colors"
+                >Inicio</a
+            >
+            <span>/</span>
+            <span class="text-slate-800 font-medium">Administración</span>
+            <span>/</span>
+            <span class="text-slate-800 font-medium">Estados de Orden</span>
+        </div>
+
+        <OrderStatusManager client:load />
+    </div>
+</DashboardLayout>
