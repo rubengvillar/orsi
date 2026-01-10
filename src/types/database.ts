@@ -116,8 +116,28 @@ export interface RouteStop {
     estimated_duration: string | null;
     installers_required: number;
     notes: string | null;
+    items_to_deliver: string | null;
+    delivery_contact: string | null;
+
+    // Proof of Delivery
+    photos_before: { url: string; timestamp: string }[] | null;
+    photos_after: { url: string; timestamp: string }[] | null;
+    signature_data: string | null;
+    signed_at: string | null;
+    signed_by_name: string | null;
+
     created_at: string;
     order?: any; // For joins
+}
+
+export interface RouteMaterial {
+    id: string;
+    route_id: string;
+    description: string;
+    quantity: number;
+    order_id: string | null;
+    receiver_operator_id: string | null;
+    created_at: string;
 }
 
 
