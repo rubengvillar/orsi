@@ -1,5 +1,6 @@
 export const PERMISSIONS = {
     DASHBOARD: 'dashboard:view',
+    INVENTORY_VIEW: 'inventory:view',
 
     INVENTORY_ACCESSORIES_VIEW: 'inventory:accessories:view',
     INVENTORY_ACCESSORIES_WRITE: 'inventory:accessories:write',
@@ -43,6 +44,9 @@ export const PERMISSIONS = {
 
     LOGISTICS_VIEW: 'logistics:view',
     LOGISTICS_WRITE: 'logistics:manage',
+
+    INVENTORY_TOOLS_VIEW: 'inventory:tools:view',
+    INVENTORY_TOOLS_WRITE: 'inventory:tools:write',
 };
 
 export const PATH_PERMISSIONS: Record<string, string> = {
@@ -53,6 +57,7 @@ export const PATH_PERMISSIONS: Record<string, string> = {
     '/inventory/profiles': PERMISSIONS.INVENTORY_PROFILES_VIEW,
     '/inventory/glass': PERMISSIONS.INVENTORY_GLASS_VIEW,
     '/inventory/glass-accessories': PERMISSIONS.INVENTORY_GLASS_ACCESSORIES_VIEW,
+    '/inventory/tools': PERMISSIONS.INVENTORY_TOOLS_VIEW,
     '/inventory/optimizer': PERMISSIONS.OPTIMIZER_VIEW,
     '/inventory/cuts': PERMISSIONS.CUTS_VIEW,
     '/admin/users': PERMISSIONS.ADMIN_USERS_VIEW,

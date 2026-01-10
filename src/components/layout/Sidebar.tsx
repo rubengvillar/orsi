@@ -9,8 +9,12 @@ import {
     ChevronDown,
     Settings,
     FileText,
+    Car,
     Truck,
+    ClipboardList,
+    Wrench,
     X,
+    TrendingUp,
 } from "lucide-react";
 import { useStore } from "@nanostores/react";
 import { isMobileMenuOpen, closeMobileMenu } from "../../stores/uiStore";
@@ -51,7 +55,15 @@ export default function Sidebar({ currentPath }: SidebarProps) {
             icon: LayoutDashboard,
             items: [
                 { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, permission: PERMISSIONS.DASHBOARD },
-                { label: "Ordenes", href: "/orders", icon: Box, permission: PERMISSIONS.ORDERS_VIEW },
+                { label: "Estadísticas", href: "/admin/statistics", icon: TrendingUp, permission: PERMISSIONS.INVENTORY_VIEW },
+            ]
+        },
+        {
+            label: "Operaciones",
+            icon: ClipboardList,
+            items: [
+                { label: "Órdenes de Producción", href: "/orders", icon: ClipboardList, permission: PERMISSIONS.ORDERS_VIEW },
+                { label: "Logística", href: "/admin/logistics", icon: Truck, permission: PERMISSIONS.LOGISTICS_VIEW },
             ]
         },
         {
@@ -62,6 +74,8 @@ export default function Sidebar({ currentPath }: SidebarProps) {
                 { label: "Perfiles", href: "/inventory/profiles", icon: Package, permission: PERMISSIONS.INVENTORY_PROFILES_VIEW },
                 { label: "Vidrios", href: "/inventory/glass", icon: Package, permission: PERMISSIONS.INVENTORY_GLASS_VIEW },
                 { label: "Insumos Vidrio", href: "/inventory/glass-accessories", icon: Package, permission: PERMISSIONS.INVENTORY_GLASS_ACCESSORIES_VIEW },
+                { label: "Herramientas", href: "/inventory/tools", icon: Wrench, permission: PERMISSIONS.INVENTORY_TOOLS_VIEW },
+                { label: "Cajones / Equipos", href: "/inventory/toolboxes", icon: Box, permission: PERMISSIONS.INVENTORY_TOOLS_VIEW },
             ]
         },
         {
@@ -70,7 +84,6 @@ export default function Sidebar({ currentPath }: SidebarProps) {
             items: [
                 { label: "Optimizar Cortes", href: "/inventory/optimizer", icon: Scissors, permission: PERMISSIONS.OPTIMIZER_VIEW },
                 { label: "Plan de Cortes", href: "/inventory/cuts", icon: Scissors, permission: PERMISSIONS.CUTS_VIEW },
-                { label: "Logística", href: "/admin/logistics", icon: Truck, permission: PERMISSIONS.LOGISTICS_VIEW },
             ]
         },
         {
@@ -79,10 +92,11 @@ export default function Sidebar({ currentPath }: SidebarProps) {
             items: [
                 { label: "Cuentas de Usuario", href: "/admin/users", icon: Users, permission: PERMISSIONS.ADMIN_USERS_VIEW },
                 { label: "Operarios", href: "/admin/operators", icon: Users, permission: PERMISSIONS.ADMIN_OPERATORS_VIEW },
+                { label: "Equipos", href: "/admin/teams", icon: Users, permission: PERMISSIONS.ADMIN_OPERATORS_VIEW },
                 { label: "Roles", href: "/admin/roles", icon: Shield, permission: PERMISSIONS.ADMIN_ROLES_VIEW },
                 { label: "Permisos", href: "/admin/permissions", icon: Shield, permission: PERMISSIONS.ADMIN_PERMISSIONS_VIEW },
                 { label: "Estados de Orden", href: "/admin/order-statuses", icon: Box, permission: PERMISSIONS.ADMIN_ORDER_STATUSES_VIEW },
-                { label: "Vehículos", href: "/admin/vehicles", icon: Truck, permission: PERMISSIONS.ADMIN_VEHICLES_VIEW },
+                { label: "Vehículos", href: "/admin/vehicles", icon: Car, permission: PERMISSIONS.ADMIN_VEHICLES_VIEW },
                 { label: "Auditoría", href: "/admin/audit", icon: FileText, permission: PERMISSIONS.ADMIN_AUDIT_VIEW },
             ]
         }

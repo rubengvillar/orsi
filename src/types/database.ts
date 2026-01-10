@@ -137,7 +137,92 @@ export interface RouteMaterial {
     quantity: number;
     order_id: string | null;
     receiver_operator_id: string | null;
+
+    // Inventory Links
+    tool_id: string | null;
+    aluminum_accessory_id: string | null;
+    glass_accessory_id: string | null;
+
+    // Logic
+    is_returnable: boolean;
+    returned_at: string | null;
+    returned_by_id: string | null;
+
+    created_at: string;
+
+    // Joins
+    tool?: Tool;
+}
+
+export interface Tool {
+    id: string;
+    name: string;
+    description: string | null;
+    quantity_total: number;
+    quantity_available: number;
+    location: string | null;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface Toolbox {
+    id: string;
+    name: string;
+    description: string | null;
+    assigned_to_team: string | null;
+    team_id: string | null;
+    is_active: boolean;
     created_at: string;
 }
 
+export interface ToolboxItem {
+    id: string;
+    toolbox_id: string;
+    tool_id: string;
+    quantity: number;
+    created_at: string;
+    tool?: Tool;
+}
 
+export interface ToolLoss {
+    id: string;
+    toolbox_id: string;
+    tool_id: string;
+    quantity: number;
+    reason: string;
+    reported_by: string;
+    reported_at: string;
+    tool?: Tool;
+}
+
+
+
+export interface Database {
+    public: {
+        Tables: {
+            roles: { Row: Role; Insert: Omit<Role, 'id'>; Update: Partial<Role> };
+            permissions: { Row: Permission; Insert: Omit<Permission, 'id'>; Update: Partial<Permission> };
+            role_permissions: { Row: RolePermission; Insert: RolePermission; Update: RolePermission };
+            user_roles: { Row: UserRole; Insert: UserRole; Update: UserRole };
+
+            aluminum_accessories: { Row: AluminumAccessory; Insert: Omit<AluminumAccessory, 'id'>; Update: Partial<AluminumAccessory> };
+            aluminum_profiles: { Row: AluminumProfile; Insert: Omit<AluminumProfile, 'id'>; Update: Partial<AluminumProfile> };
+
+            glass_types: { Row: GlassType; Insert: Omit<GlassType, 'id'>; Update: Partial<GlassType> };
+            glass_sheets: { Row: GlassSheet; Insert: Omit<GlassSheet, 'id'>; Update: Partial<GlassSheet> };
+            glass_remnants: { Row: GlassRemnant; Insert: Omit<GlassRemnant, 'id'>; Update: Partial<GlassRemnant> };
+            glass_accessories: { Row: GlassAccessory; Insert: Omit<GlassAccessory, 'id'>; Update: Partial<GlassAccessory> };
+
+            vehicles: { Row: Vehicle; Insert: Omit<Vehicle, 'id'>; Update: Partial<Vehicle> };
+            routes: { Row: Route; Insert: Omit<Route, 'id'>; Update: Partial<Route> };
+            route_stops: { Row: RouteStop; Insert: Omit<RouteStop, 'id'>; Update: Partial<RouteStop> };
+            route_materials: { Row: RouteMaterial; Insert: Omit<RouteMaterial, 'id'>; Update: Partial<RouteMaterial> };
+
+            tools: { Row: Tool; Insert: Omit<Tool, 'id'>; Update: Partial<Tool> };
+            toolboxes: { Row: Toolbox; Insert: Omit<Toolbox, 'id'>; Update: Partial<Toolbox> };
+            toolbox_items: { Row: ToolboxItem; Insert: Omit<ToolboxItem, 'id'>; Update: Partial<ToolboxItem> };
+            tool_losses: { Row: ToolLoss; Insert: Omit<ToolLoss, 'id'>; Update: Partial<ToolLoss> };
+        };
+    };
+};

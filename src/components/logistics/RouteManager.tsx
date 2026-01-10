@@ -26,6 +26,8 @@ export default function RouteManager() {
     // Execution State
     const [podStop, setPodStop] = useState<any | null>(null); // Stop being 'completed'
 
+    const [availableTools, setAvailableTools] = useState<any[]>([]);
+
     useEffect(() => {
         fetchRoutes();
         fetchResources();
@@ -51,6 +53,9 @@ export default function RouteManager() {
 
         const { data: opData } = await supabase.from('operators').select('*').eq('is_active', true);
         setInstallers(opData || []);
+
+        const { data: tData } = await supabase.from('tools').select('*').eq('is_active', true);
+        setAvailableTools(tData || []);
     };
 
     const fetchPendingOrders = async () => {
@@ -161,6 +166,14 @@ export default function RouteManager() {
             quantity: 1,
             order_id: null,
             receiver_operator_id: null,
+
+            tool_id: null,
+            aluminum_accessory_id: null,
+            glass_accessory_id: null,
+            is_returnable: false,
+            returned_at: null,
+            returned_by_id: null,
+
             created_at: new Date().toISOString()
         }]);
     };
@@ -222,8 +235,10 @@ export default function RouteManager() {
                     route_id: routeId,
                     description: m.description,
                     quantity: m.quantity,
-                    order_id: m.order_id || null, // Ensure explicit null
-                    receiver_operator_id: m.receiver_operator_id || null
+                    order_id: m.order_id || null,
+                    receiver_operator_id: m.receiver_operator_id || null,
+                    tool_id: m.tool_id || null,
+                    is_returnable: m.is_returnable || false
                 }));
                 const { error } = await supabase.from('route_materials').insert(matsPayload);
                 if (error) throw error;
@@ -410,28 +425,62 @@ export default function RouteManager() {
                                     </div>
                                     <div className="space-y-2">
                                         {routeMaterials.map(mat => (
-                                            <div key={mat.id} className="flex gap-2 items-center text-sm">
+                                            <div key={mat.id} className="flex gap-2 items-center text-sm border-b border-slate-50 pb-2 mb-2">
                                                 <input
                                                     type="number"
                                                     value={mat.quantity}
                                                     onChange={e => handleUpdateRouteMaterial(mat.id, 'quantity', parseInt(e.target.value))}
                                                     className="w-16 border rounded px-2 py-1"
                                                 />
+
+                                                {/* Tool Selection */}
+                                                <select
+                                                    value={mat.tool_id || ''}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        if (val) {
+                                                            const tool = availableTools.find(t => t.id === val);
+                                                            // Auto-fill description if tool selected and description is empty or matches previous
+                                                            handleUpdateRouteMaterial(mat.id, 'tool_id', val);
+                                                            handleUpdateRouteMaterial(mat.id, 'description', tool ? tool.name : '');
+                                                            handleUpdateRouteMaterial(mat.id, 'is_returnable', true);
+                                                        } else {
+                                                            handleUpdateRouteMaterial(mat.id, 'tool_id', null);
+                                                        }
+                                                    }}
+                                                    className="w-40 border rounded px-2 py-1 text-xs"
+                                                >
+                                                    <option value="">(Manual / Texto)</option>
+                                                    {availableTools.filter(t => t.quantity_available > 0 || mat.tool_id === t.id).map(t => (
+                                                        <option key={t.id} value={t.id}>{t.name} (Disp: {t.quantity_available})</option>
+                                                    ))}
+                                                </select>
+
                                                 <input
                                                     type="text"
-                                                    placeholder="Descripción (ej. Escalera, Siliconas Extra)"
+                                                    placeholder="Descripción"
                                                     value={mat.description}
                                                     onChange={e => handleUpdateRouteMaterial(mat.id, 'description', e.target.value)}
                                                     className="flex-1 border rounded px-2 py-1"
                                                 />
+
                                                 <select
                                                     value={mat.receiver_operator_id || ''}
                                                     onChange={e => handleUpdateRouteMaterial(mat.id, 'receiver_operator_id', e.target.value || null)}
-                                                    className="w-40 border rounded px-2 py-1 text-xs"
+                                                    className="w-32 border rounded px-2 py-1 text-xs"
                                                 >
-                                                    <option value="">(Sin Responsable)</option>
+                                                    <option value="">(Sin Resp.)</option>
                                                     {installers.map(op => <option key={op.id} value={op.id}>{op.full_name}</option>)}
                                                 </select>
+
+                                                <button
+                                                    title={mat.is_returnable ? "Devolución Pendiente" : "Consumible"}
+                                                    onClick={() => handleUpdateRouteMaterial(mat.id, 'is_returnable', !mat.is_returnable)}
+                                                    className={`p-1 rounded ${mat.is_returnable ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'}`}
+                                                >
+                                                    <ClipboardList className="w-4 h-4" />
+                                                </button>
+
                                                 <button onClick={() => handleRemoveRouteMaterial(mat.id)} className="text-slate-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                                             </div>
                                         ))}
@@ -457,8 +506,8 @@ export default function RouteManager() {
                                                     <button
                                                         onClick={() => setPodStop(stop)}
                                                         className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${stop.signature_data
-                                                                ? 'bg-green-100 text-green-700 border border-green-200'
-                                                                : 'bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700'
+                                                            ? 'bg-green-100 text-green-700 border border-green-200'
+                                                            : 'bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700'
                                                             }`}
                                                     >
                                                         {stop.signature_data ? <CheckCircle className="w-3 h-3" /> : <PenTool className="w-3 h-3" />}

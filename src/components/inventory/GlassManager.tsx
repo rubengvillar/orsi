@@ -90,7 +90,7 @@ export default function GlassManager() {
             // Explicitly ensure numeric types for dimensions
             const payload = {
                 ...cleanForm,
-                thickness_mm: parseFloat(cleanForm.thickness_mm),
+                thickness_mm: cleanForm.thickness_mm, // Keep as text
                 std_width_mm: parseInt(cleanForm.std_width_mm),
                 std_height_mm: parseInt(cleanForm.std_height_mm),
                 min_stock_sheets: parseInt(cleanForm.min_stock_sheets)
@@ -283,7 +283,7 @@ export default function GlassManager() {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Espesor (mm)</label>
-                            <input type="number" required value={typeForm.thickness_mm} onChange={e => setTypeForm({ ...typeForm, thickness_mm: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+                            <input type="text" required value={typeForm.thickness_mm} onChange={e => setTypeForm({ ...typeForm, thickness_mm: e.target.value })} className="w-full px-4 py-2 border rounded-lg" placeholder="Ej. 4, 3+3, DVH" />
                         </div>
                     </div>
                     <div>

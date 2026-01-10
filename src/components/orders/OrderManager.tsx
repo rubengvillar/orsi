@@ -5,8 +5,10 @@ import { supabase } from "../../lib/supabase";
 interface Order {
     id: string;
     order_number: number;
+    legacy_order_number: string | null;
     client_name: string;
     description: string;
+    address: string | null;
     status: 'Pending' | 'Ready for Cutting' | 'Cut' | 'In Progress' | 'Installed' | 'Completed' | 'Cancelled';
     manufactured_at: string | null;
     installed_at: string | null;
@@ -26,7 +28,8 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
     const [orders, setOrders] = useState<Order[]>([]);
     const [operators, setOperators] = useState<Operator[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isByStatus, setIsByStatus] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +51,15 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
         fetchOperators();
     }, []);
 
+    // Debounce Search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
     const fetchOrders = async () => {
         setLoading(true);
         const { data, error } = await supabase
@@ -68,6 +80,21 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
         const { data } = await supabase.from("operators").select("id, full_name").eq("is_active", true);
         if (data) setOperators(data);
     };
+
+    // Filter Logic
+    const filteredOrders = orders.filter(order => {
+        const term = debouncedSearchTerm.toLowerCase();
+        if (!term) return true;
+
+        return (
+            (order.client_name || '').toLowerCase().includes(term) ||
+            (order.description || '').toLowerCase().includes(term) ||
+            (order.order_number?.toString() || '').includes(term) ||
+            (order.legacy_order_number || '').toLowerCase().includes(term) ||
+            (order.address || '').toLowerCase().includes(term) ||
+            getStatusLabel(order.status).toLowerCase().includes(term)
+        );
+    });
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -95,7 +122,7 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
         const newOrderId = orderData[0].id;
 
         // 2. Link Operators (Cutter & Installer)
-        const operatorLinks = [];
+        const operatorLinks: any[] = [];
 
         if (formData.cutter_ids.length > 0) {
             formData.cutter_ids.forEach(opId => {
@@ -171,8 +198,10 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
                     <input
                         type="text"
-                        placeholder="Search orders..."
+                        placeholder="Buscar por nro, cliente, descripción..."
                         className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
                 <div className="flex gap-2">
@@ -182,7 +211,7 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
                             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors font-medium shadow-sm"
                         >
                             <Plus className="w-5 h-5" />
-                            New Order
+                            Nueva Orden
                         </button>
                     )}
                 </div>
@@ -190,43 +219,66 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
 
             {/* Orders List / Grid */}
             {loading ? (
-                <div className="text-center py-12 text-slate-500">Loading orders...</div>
-            ) : orders.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">Cargando órdenes...</div>
+            ) : filteredOrders.length === 0 ? (
                 <div className="text-center py-12 bg-white rounded-xl border border-slate-200 border-dashed">
                     <FolderKanban className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                    <h3 className="text-lg font-medium text-slate-700">No orders found</h3>
-                    <p className="text-slate-500 text-sm">Create a new order to get started.</p>
+                    <h3 className="text-lg font-medium text-slate-700">No se encontraron órdenes</h3>
+                    <p className="text-slate-500 text-sm">Prueba ajustes tu búsqueda o crea una nueva.</p>
                 </div>
             ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {orders.map((order) => (
-                        <a
-                            key={order.id}
-                            href={`/orders/${order.id}`}
-                            className="block bg-white p-5 rounded-xl border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all group"
-                        >
-                            <div className="flex justify-between items-start mb-3">
-                                <div className="flex flex-col">
-                                    <span className="text-xs text-slate-400 font-mono uppercase">Order #{order.order_number}</span>
-                                    <h3 className="text-lg font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
-                                        {order.client_name}
-                                    </h3>
+                    {filteredOrders.map((order) => {
+                        const daysOld = Math.floor((new Date().getTime() - new Date(order.created_at).getTime()) / (1000 * 3600 * 24));
+                        const isCompleted = order.status === 'Completed' || order.status === 'Cancelled';
+                        let borderClass = 'border-slate-200 hover:border-blue-300';
+
+                        // Priority logic for borders
+                        if (!isCompleted) {
+                            if (daysOld > 10) {
+                                borderClass = 'border-red-500 ring-1 ring-red-500 bg-red-50/10';
+                            } else if (daysOld > 5) {
+                                borderClass = 'border-amber-400 ring-1 ring-amber-400 bg-amber-50/10';
+                            }
+                        }
+
+                        return (
+                            <a
+                                key={order.id}
+                                href={`/orders/${order.id}`}
+                                className={`block bg-white p-5 rounded-xl border ${borderClass} hover:shadow-md transition-all group relative`}
+                            >
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex flex-col">
+                                        <span className="text-xs text-slate-400 font-mono uppercase">Orden N° {order.order_number}</span>
+                                        <h3 className="text-lg font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
+                                            {order.client_name}
+                                        </h3>
+                                    </div>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap ${getStatusColor(order.status)}`}>
+                                        {getStatusLabel(order.status)}
+                                    </span>
                                 </div>
-                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap ${getStatusColor(order.status)}`}>
-                                    {getStatusLabel(order.status)}
-                                </span>
-                            </div>
 
-                            <p className="text-slate-600 text-sm mb-4 line-clamp-2 min-h-[2.5em]">
-                                {order.description || "No description provided."}
-                            </p>
+                                <p className="text-slate-600 text-sm mb-4 line-clamp-2 min-h-[2.5em]">
+                                    {order.description || "Sin descripción."}
+                                </p>
 
-                            <div className="flex items-center text-xs text-slate-400 pt-3 border-t border-slate-100">
-                                <Calendar className="w-3.5 h-3.5 mr-1.5" />
-                                {new Date(order.created_at).toLocaleDateString()}
-                            </div>
-                        </a>
-                    ))}
+                                <div className="flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-slate-100">
+                                    <div className="flex items-center">
+                                        <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                                        {new Date(order.created_at).toLocaleDateString()}
+                                    </div>
+                                    {!isCompleted && daysOld > 5 && (
+                                        <div className={`flex items-center font-bold ${daysOld > 10 ? 'text-red-600' : 'text-amber-600'}`}>
+                                            <AlertCircle className="w-3.5 h-3.5 mr-1" />
+                                            {daysOld} días
+                                        </div>
+                                    )}
+                                </div>
+                            </a>
+                        );
+                    })}
                 </div>
             )}
 
@@ -234,12 +286,12 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-                        <h2 className="text-xl font-bold text-slate-800 mb-4">Create New Order</h2>
+                        <h2 className="text-xl font-bold text-slate-800 mb-4">Crear Nueva Orden</h2>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Client Name
+                                        Nombre del Cliente
                                     </label>
                                     <input
                                         type="text"
@@ -326,7 +378,7 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    Description / Notas
+                                    Descripción / Notas
                                 </label>
                                 <textarea
                                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
@@ -400,14 +452,16 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
                                     type="button"
                                     onClick={() => setIsModalOpen(false)}
                                     className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors font-medium"
+                                    aria-label="Cancelar"
                                 >
-                                    Cancel
+                                    Cancelar
                                 </button>
                                 <button
                                     type="submit"
                                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+                                    aria-label="Confirmar Crear Orden"
                                 >
-                                    Create Order
+                                    Crear Orden
                                 </button>
                             </div>
                         </form>
