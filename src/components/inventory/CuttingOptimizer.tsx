@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
-import { Scissors, Box, Layers, Play, CheckCircle2, AlertCircle, FileText, Trash2 } from "lucide-react";
+import { Scissors, Box, Layers, Play, CheckCircle2, AlertCircle, FileText, Trash2, Calendar, LayoutGrid } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { hasPermission } from "../../stores/authStore";
@@ -8,11 +8,9 @@ import { PERMISSIONS } from "../../lib/permissions";
 
 export default function CuttingOptimizer() {
     const [glassTypes, setGlassTypes] = useState<any[]>([]);
-    const [selectedType, setSelectedType] = useState<string>("");
     const [pendingCuts, setPendingCuts] = useState<any[]>([]);
-    const [availableStock, setAvailableStock] = useState<{ sheets: number, remnants: any[] }>({ sheets: 0, remnants: [] });
     const [loading, setLoading] = useState(false);
-    const [pendingCutsCounts, setPendingCutsCounts] = useState<Record<string, number>>({});
+    const [excludedCuts, setExcludedCuts] = useState<any[]>([]);
 
     // Optimization State
     const [selectedCuts, setSelectedCuts] = useState<string[]>([]);
@@ -24,50 +22,34 @@ export default function CuttingOptimizer() {
 
     useEffect(() => {
         fetchTypes();
+        fetchData();
     }, []);
-
-    useEffect(() => {
-        if (selectedType) {
-            fetchData();
-        }
-    }, [selectedType]);
 
     const fetchTypes = async () => {
         const { data } = await supabase.from('glass_types').select('*').order('code');
         setGlassTypes(data || []);
-        if (data?.length) setSelectedType(data[0].id);
-
-        // Fetch pending cuts count for all types
-        const { data: allCuts } = await supabase
-            .from('order_cuts')
-            .select('glass_type_id')
-            .eq('status', 'pending');
-
-        const counts: Record<string, number> = {};
-        allCuts?.forEach(cut => {
-            counts[cut.glass_type_id] = (counts[cut.glass_type_id] || 0) + 1;
-        });
-        setPendingCutsCounts(counts);
     };
 
     const fetchData = async () => {
         setLoading(true);
-        // 1. Fetch pending cuts for this type
+        // Fetch ALL pending or optimized cuts
         const { data: cuts } = await supabase
             .from("order_cuts")
-            .select("*, orders(client_name, order_number, old_order_number)")
-            .eq("glass_type_id", selectedType)
-            .eq("status", "pending");
-        setPendingCuts(cuts || []);
+            .select("*, orders(client_name, order_number, legacy_order_number, created_at), glass_types(code, thickness_mm, color)")
+            .in("status", ["pending", "optimized", "Pending", "Optimized"]);
 
-        // 2. Fetch available stock
-        const { data: sheets } = await supabase.from('glass_sheets').select('quantity').eq('glass_type_id', selectedType).single();
-        const { data: remnants } = await supabase.from('glass_remnants').select('*').eq('glass_type_id', selectedType).order('width_mm', { ascending: false });
+        console.log("CuttingOptimizer fetch result:", { cuts });
+        if (!cuts) console.warn("CuttingOptimizer: No cuts found or null returned.");
 
-        setAvailableStock({
-            sheets: sheets?.quantity || 0,
-            remnants: (remnants || []).sort((a, b) => (a.width_mm * a.height_mm) - (b.width_mm * b.height_mm)) // Priority: Smallest Area
+
+        // Manual sort because foreign table sorting in Supabase JS client can be tricky with joined data sometimes
+        const sortedCuts = (cuts || []).sort((a: any, b: any) => {
+            const dateA = new Date(a.orders?.created_at || 0).getTime();
+            const dateB = new Date(b.orders?.created_at || 0).getTime();
+            return dateA - dateB;
         });
+
+        setPendingCuts(sortedCuts);
         setLoading(false);
     };
 
@@ -77,9 +59,90 @@ export default function CuttingOptimizer() {
         );
     };
 
-    // --- 2D PACKING LOGIC ---
-    const runOptimizer = () => {
-        // Expand cuts based on quantity
+    const selectAllCuts = () => {
+        if (selectedCuts.length === pendingCuts.length) {
+            setSelectedCuts([]);
+        } else {
+            setSelectedCuts(pendingCuts.map(c => c.id));
+        }
+    };
+
+    // --- WASTE CALCULATION HELPER ---
+    const calculateWastes = (piece: any) => {
+        const sortedCuts = [...piece.cuts].sort((a, b) => a.posY - b.posY || a.posX - b.posX);
+        // Identify Shelves
+        const shelves: any[] = [];
+        let currentY = -1;
+        let currentShelf: any = null;
+
+        sortedCuts.forEach(cut => {
+            if (!currentShelf || Math.abs(cut.posY - currentY) > 1) {
+                currentY = cut.posY;
+                currentShelf = { y: currentY, h: 0, cuts: [] };
+                shelves.push(currentShelf);
+            }
+            currentShelf.cuts.push(cut);
+            currentShelf.h = Math.max(currentShelf.h, cut.height_mm);
+        });
+
+        const wastes: any[] = []; // {x, y, w, h, label, type, saved}
+        const sheetW = piece.dimensions.w;
+        const sheetH = piece.dimensions.h;
+        let lastShelfBottom = 0;
+
+        shelves.forEach(shelf => {
+            let currentX = 0;
+            shelf.cuts.forEach((cut: any) => {
+                // Top Waste
+                if (shelf.h - cut.height_mm > 5) {
+                    wastes.push({
+                        id: `W-${Math.random().toString(36).substr(2, 5)}`,
+                        x: cut.posX,
+                        y: cut.posY + cut.height_mm,
+                        w: cut.width_mm,
+                        h: shelf.h - cut.height_mm,
+                        label: "DESPERDICIO",
+                        type: 'DESPERDICIO',
+                        saved: false
+                    });
+                }
+                currentX = cut.posX + cut.width_mm;
+            });
+            // Right Waste
+            if (sheetW - currentX > 5) {
+                wastes.push({
+                    id: `W-${Math.random().toString(36).substr(2, 5)}`,
+                    x: currentX,
+                    y: shelf.y,
+                    w: sheetW - currentX,
+                    h: shelf.h,
+                    label: "DESPERDICIO",
+                    type: 'DESPERDICIO',
+                    saved: false
+                });
+            }
+            lastShelfBottom = shelf.y + shelf.h;
+        });
+
+        // Bottom Waste
+        if (sheetH - lastShelfBottom > 5) {
+            const isBigEnough = (sheetH - lastShelfBottom) > 50;
+            wastes.push({
+                id: `W-${Math.random().toString(36).substr(2, 5)}`,
+                x: 0,
+                y: lastShelfBottom,
+                w: sheetW,
+                h: sheetH - lastShelfBottom,
+                label: isBigEnough ? "REZAGO" : "DESPERDICIO",
+                type: isBigEnough ? "REZAGO" : "DESPERDICIO",
+                saved: isBigEnough // Default clean waste > 50mm to saved
+            });
+        }
+        return wastes;
+    };
+
+    // --- 2D PACKING LOGIC (MULTI-TYPE) ---
+    const runOptimizer = async () => {
         const expandedCuts: any[] = [];
         pendingCuts
             .filter(c => selectedCuts.includes(c.id))
@@ -91,138 +154,174 @@ export default function CuttingOptimizer() {
 
         if (expandedCuts.length === 0) return alert("Selecciona al menos un corte.");
 
-        // Sort by height descending (Better for shelf packing)
-        expandedCuts.sort((a, b) => b.height_mm - a.height_mm);
+        setLoading(true);
+        setExcludedCuts([]);
 
-        const glassType = glassTypes.find(t => t.id === selectedType);
-        let remainingCuts = [...expandedCuts];
-        let usedPieces: any[] = [];
+        // Group by Glass Type
+        const cutsByType: Record<string, any[]> = {};
+        expandedCuts.forEach(c => {
+            if (!cutsByType[c.glass_type_id]) cutsByType[c.glass_type_id] = [];
+            cutsByType[c.glass_type_id].push(c);
+        });
 
-        // 1. Try Remnants First (Smallest to Largest Area)
-        for (const rem of availableStock.remnants) {
-            if (remainingCuts.length === 0) break;
+        const finalResults: any[] = [];
+        const allSkippedCuts: any[] = [];
 
-            let remWidth = rem.width_mm;
-            let remHeight = rem.height_mm;
+        try {
+            // Process each type
+            for (const typeId of Object.keys(cutsByType)) {
+                const typeCuts = cutsByType[typeId];
+                const glassType = glassTypes.find(t => t.id === typeId);
 
-            // Simplified: One or more cuts in a remnant using shelf packing
-            let currentRemCuts: any[] = [];
-            let x = 0, y = 0, shelfH = 0;
+                // Fetch STOCK for this type
+                const { data: sheets } = await supabase.from('glass_sheets').select('quantity').eq('glass_type_id', typeId).single();
+                const { data: remnants } = await supabase.from('glass_remnants').select('*').eq('glass_type_id', typeId).order('width_mm', { ascending: false });
 
-            const tempRemaining = [...remainingCuts];
-            for (const cut of tempRemaining) {
-                // Try normal orientation
-                if (x + cut.width_mm <= remWidth && y + cut.height_mm <= remHeight) {
-                    currentRemCuts.push({
-                        ...cut,
-                        posX: x,
-                        posY: y
-                    });
-                    x += cut.width_mm;
-                    shelfH = Math.max(shelfH, cut.height_mm);
-                    remainingCuts = remainingCuts.filter(c => c !== cut);
-                } else if (y + shelfH + cut.height_mm <= remHeight) {
-                    // Try next shelf
-                    y += shelfH;
-                    x = 0;
-                    shelfH = cut.height_mm;
-                    if (x + cut.width_mm <= remWidth) {
-                        currentRemCuts.push({
-                            ...cut,
-                            posX: x,
-                            posY: y
-                        });
-                        x += cut.width_mm;
-                        remainingCuts = remainingCuts.filter(c => c !== cut);
+                const stock = {
+                    sheets: sheets?.quantity || 0,
+                    remnants: (remnants || []).sort((a, b) => (a.width_mm * a.height_mm) - (b.width_mm * b.height_mm))
+                };
+
+                // Sort by height descending
+                typeCuts.sort((a, b) => b.height_mm - a.height_mm);
+
+                // FILTER: Exclude cuts that are definitely too big for ANY stock (sheet or largest remnant)
+                const maxStockW = Math.max(stock.sheets > 0 ? glassType.std_width_mm : 0, ...stock.remnants.map((r: any) => r.width_mm));
+                const maxStockH = Math.max(stock.sheets > 0 ? glassType.std_height_mm : 0, ...stock.remnants.map((r: any) => r.height_mm));
+
+                let remainingCuts: any[] = [];
+                const skippedCuts: any[] = [];
+
+                for (const c of typeCuts) {
+                    // Check if fit in normal orientation OR rotated
+                    const fitsStandard = c.width_mm <= maxStockW && c.height_mm <= maxStockH;
+                    const fitsRotated = c.height_mm <= maxStockW && c.width_mm <= maxStockH;
+
+                    if (fitsStandard || fitsRotated) {
+                        remainingCuts.push(c);
+                    } else {
+                        skippedCuts.push(c);
                     }
                 }
-            }
 
-            if (currentRemCuts.length > 0) {
-                usedPieces.push({
-                    type: 'Rezago',
-                    id: rem.id,
-                    location: rem.location || 'Sin ubicación',
-                    dimensions: { w: remWidth, h: remHeight },
-                    dimText: `${remWidth}x${remHeight}`,
-                    cuts: currentRemCuts,
-                    newRemnant: (remHeight - (y + shelfH)) > 50 ? {
-                        width_mm: remWidth,
-                        height_mm: remHeight - (y + shelfH),
-                        saveAsRemnant: true,
-                        location: ""
-                    } : null
-                });
-            }
-        }
+                if (skippedCuts.length > 0) {
+                    // alert(`Atención: ${skippedCuts.length} cortes de ${glassType.code} fueron excluidos...`);
+                    // Now we collect them silently
+                }
 
-        // 2. Use Full Sheets if cuts remain
-        while (remainingCuts.length > 0) {
-            const sheetW = glassType.std_width_mm;
-            const sheetH = glassType.std_height_mm;
+                // Add skipped to list
+                allSkippedCuts.push(...skippedCuts);
 
-            let currentSheetCuts: any[] = [];
-            let x = 0, y = 0, shelfH = 0;
+                let usedPieces: any[] = [];
 
-            const tempRemaining = [...remainingCuts];
-            for (const cut of tempRemaining) {
-                if (x + cut.width_mm <= sheetW && y + cut.height_mm <= sheetH) {
-                    currentSheetCuts.push({
-                        ...cut,
-                        posX: x,
-                        posY: y
-                    });
-                    x += cut.width_mm;
-                    shelfH = Math.max(shelfH, cut.height_mm);
-                    remainingCuts = remainingCuts.filter(c => c !== cut);
-                } else if (y + shelfH + cut.height_mm <= sheetH) {
-                    y += shelfH;
-                    x = 0;
-                    shelfH = cut.height_mm;
-                    if (x + cut.width_mm <= sheetW) {
-                        currentSheetCuts.push({
-                            ...cut,
-                            posX: x,
-                            posY: y
-                        });
-                        x += cut.width_mm;
-                        remainingCuts = remainingCuts.filter(c => c !== cut);
+                // 1. Try Remnants First
+                for (const rem of stock.remnants) {
+                    if (remainingCuts.length === 0) break;
+                    let remWidth = rem.width_mm;
+                    let remHeight = rem.height_mm;
+                    let currentRemCuts: any[] = [];
+                    let x = 0, y = 0, shelfH = 0;
+                    const tempRemaining = [...remainingCuts];
+
+                    for (const cut of tempRemaining) {
+                        if (x + cut.width_mm <= remWidth && y + cut.height_mm <= remHeight) {
+                            currentRemCuts.push({ ...cut, posX: x, posY: y });
+                            x += cut.width_mm;
+                            shelfH = Math.max(shelfH, cut.height_mm);
+                            remainingCuts = remainingCuts.filter(c => c !== cut);
+                        } else if (y + shelfH + cut.height_mm <= remHeight) {
+                            y += shelfH; x = 0; shelfH = cut.height_mm;
+                            if (x + cut.width_mm <= remWidth) {
+                                currentRemCuts.push({ ...cut, posX: x, posY: y });
+                                x += cut.width_mm;
+                                remainingCuts = remainingCuts.filter(c => c !== cut);
+                            }
+                        }
+                    }
+                    if (currentRemCuts.length > 0) {
+                        const pieceObj = {
+                            type: 'Rezago',
+                            glassType: glassType,
+                            id: rem.id,
+                            location: rem.location || 'Sin ubicación',
+                            dimensions: { w: remWidth, h: remHeight },
+                            dimText: `${remWidth}x${remHeight}`,
+                            cuts: currentRemCuts,
+                            wastes: [] as any[] // Placeholder
+                        };
+                        pieceObj.wastes = calculateWastes(pieceObj);
+                        usedPieces.push(pieceObj);
                     }
                 }
+
+                // 2. Use Full Sheets
+                while (remainingCuts.length > 0) {
+                    const sheetW = glassType.std_width_mm;
+                    const sheetH = glassType.std_height_mm;
+                    let currentSheetCuts: any[] = [];
+                    let x = 0, y = 0, shelfH = 0;
+
+                    const tempRemaining = [...remainingCuts];
+                    for (const cut of tempRemaining) {
+                        if (x + cut.width_mm <= sheetW && y + cut.height_mm <= sheetH) {
+                            currentSheetCuts.push({ ...cut, posX: x, posY: y });
+                            x += cut.width_mm;
+                            shelfH = Math.max(shelfH, cut.height_mm);
+                            remainingCuts = remainingCuts.filter(c => c !== cut);
+                        } else if (y + shelfH + cut.height_mm <= sheetH) {
+                            y += shelfH; x = 0; shelfH = cut.height_mm;
+                            if (x + cut.width_mm <= sheetW) {
+                                currentSheetCuts.push({ ...cut, posX: x, posY: y });
+                                x += cut.width_mm;
+                                remainingCuts = remainingCuts.filter(c => c !== cut);
+                            }
+                        }
+                    }
+
+                    if (currentSheetCuts.length === 0) {
+                        // Should not happen due to pre-filtering but safe-guard
+                        // Move problematic cut to skipped? For now break to avoid infinite loop
+                        console.warn(`Could not fit cut ${remainingCuts[0].width_mm}x${remainingCuts[0].height_mm} in new sheet despite pre-check.`);
+                        break;
+                    }
+
+                    const pieceObj = {
+                        type: 'Hoja Entera',
+                        glassType: glassType,
+                        id: null,
+                        dimensions: { w: sheetW, h: sheetH },
+                        dimText: `${sheetW}x${sheetH}`,
+                        cuts: currentSheetCuts,
+                        wastes: [] as any[]
+                    };
+                    pieceObj.wastes = calculateWastes(pieceObj);
+                    usedPieces.push(pieceObj);
+                }
+                finalResults.push(...usedPieces);
             }
 
-            if (currentSheetCuts.length === 0) {
-                alert(`Corte fallido: El pedido ${remainingCuts[0].width_mm}x${remainingCuts[0].height_mm} es mayor que una hoja estándar.`);
-                return;
-            }
-
-            usedPieces.push({
-                type: 'Hoja Entera',
-                id: null,
-                dimensions: { w: sheetW, h: sheetH },
-                dimText: `${sheetW}x${sheetH}`,
-                cuts: currentSheetCuts,
-                newRemnant: (sheetH - (y + shelfH)) > 50 ? {
-                    width_mm: sheetW,
-                    height_mm: sheetH - (y + shelfH),
-                    saveAsRemnant: true,
-                    location: ""
-                } : null
-            });
+            setOptimizationResult(finalResults);
+            setExcludedCuts(allSkippedCuts);
+        } catch (error) {
+            console.error(error);
+            alert("Error running optimizer: " + error);
+        } finally {
+            setLoading(false);
         }
-
-        setOptimizationResult(usedPieces);
     };
 
-    const updateRemnantSetting = (pieceIdx: number, field: string, value: any) => {
+    const updateRemnantSetting = (pieceIdx: number, wasteId: string, field: string, value: any) => {
         setOptimizationResult((prev: any) => {
             if (!prev) return prev;
             const newResult = [...prev];
-            if (newResult[pieceIdx].newRemnant) {
-                newResult[pieceIdx].newRemnant = {
-                    ...newResult[pieceIdx].newRemnant,
-                    [field]: value
-                };
+            const waste = newResult[pieceIdx].wastes.find((w: any) => w.id === wasteId);
+            if (waste) {
+                waste[field] = value;
+                // Auto-update label/type if saved status changes
+                if (field === 'saved') {
+                    waste.label = value ? 'REZAGO' : 'DESPERDICIO';
+                    waste.type = value ? 'REZAGO' : 'DESPERDICIO';
+                }
             }
             return newResult;
         });
@@ -238,7 +337,7 @@ export default function CuttingOptimizer() {
                 const uniqueCutsIds = [...new Set(piece.cuts.map((c: any) => c.original_id))];
 
                 const payload = {
-                    p_glass_type_id: selectedType,
+                    p_glass_type_id: piece.glassType.id,
                     p_source_type: piece.type === 'Rezago' ? 'remnant' : 'sheet',
                     p_source_id: piece.id,
                     p_cuts_ids: uniqueCutsIds,
@@ -257,7 +356,7 @@ export default function CuttingOptimizer() {
             }
 
             // 2. Save PDF Log to Database
-            const pdfOutput = generatePDF(true); // Return as base64
+            const pdfOutput = generatePDF('base64'); // Return as base64 string
             const metadata = {
                 total_pieces: optimizationResult.length,
                 sheets_used: optimizationResult.filter((p: any) => p.type === 'Hoja Entera').length,
@@ -266,13 +365,13 @@ export default function CuttingOptimizer() {
             };
 
             await supabase.from('optimization_logs').insert({
-                glass_type_id: selectedType,
+                glass_type_id: null, // Global log for multi-type batch
                 pdf_base64: pdfOutput,
                 metadata
             });
 
             // 3. Trigger automatic download for the user
-            generatePDF();
+            generatePDF('download');
 
             alert("¡Optimización procesada, PDF guardado y stock actualizado!");
             setOptimizationResult(null);
@@ -284,197 +383,299 @@ export default function CuttingOptimizer() {
         setLoading(false);
     };
 
-    const generatePDF = (returnBase64 = false) => {
-        if (!optimizationResult || optimizationResult.length === 0) return;
-        const doc = new jsPDF('p', 'mm', 'a4');
-        const type = glassTypes.find(t => t.id === selectedType);
+    const generatePDF = (action: 'base64' | 'blob' | 'download' = 'download') => {
+        try {
+            if (!optimizationResult || optimizationResult.length === 0) return;
+            const doc = new jsPDF('p', 'mm', 'a4');
 
-        // --- CONSTANTS ---
-        const pageWidth = 210;
-        const accentColor = [37, 99, 235]; // Blue 600
-        const darkColor = [30, 41, 59];
-
-        // Group identical pieces
-        const groupedPieces = optimizationResult.reduce((acc: any[], piece: any) => {
-            const key = `${piece.type}-${piece.dimText}-${JSON.stringify(piece.cuts.map((c: any) => ({ w: c.width_mm, h: c.height_mm, client: c.orders?.client_name })))}`;
-            const existing = acc.find(p => p.key === key);
-            if (existing) {
-                existing.count++;
-                existing.pieces.push(piece);
-            } else {
-                acc.push({ key, count: 1, pieces: [piece], representative: piece });
-            }
-            return acc;
-        }, []);
-
-        // --- 1. HEADER ---
-        doc.setFillColor(accentColor.toString());
-        doc.rect(0, 0, pageWidth, 40, 'F');
-
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(24);
-        doc.setFont("helvetica", "bold");
-        doc.text("Plan de Optimización de Corte", 14, 20);
-
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "normal");
-        doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 28);
-        doc.text(`Vidrio: ${type?.code} - ${type?.thickness_mm}mm ${type?.color}`, 14, 33);
-
-        // Global Stats Summary
-        const totalCuts = optimizationResult.reduce((sum: any, p: any) => sum + p.cuts.length, 0);
-        const sheetsUsed = optimizationResult.filter((p: any) => p.type === 'Hoja Entera').length;
-        const remnantsUsed = optimizationResult.filter((p: any) => p.type === 'Rezago').length;
-
-        // Area Calculations
-        let totalAreaAvailable = 0;
-        let totalAreaUsed = 0;
-        optimizationResult.forEach((p: any) => {
-            totalAreaAvailable += p.dimensions.w * p.dimensions.h;
-            p.cuts.forEach((c: any) => {
-                totalAreaUsed += c.width_mm * c.height_mm;
+            // Group results by Glass Type
+            const resultsByType: Record<string, any[]> = {};
+            optimizationResult.forEach((p: any) => {
+                const typeCode = p.glassType.code;
+                if (!resultsByType[typeCode]) resultsByType[typeCode] = [];
+                resultsByType[typeCode].push(p);
             });
-        });
-        const wasteArea = totalAreaAvailable - totalAreaUsed;
-        const efficiency = ((totalAreaUsed / totalAreaAvailable) * 100).toFixed(1);
 
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(14, 45, pageWidth - 28, 32, 3, 3, 'F');
-        doc.setTextColor(darkColor.toString());
-        doc.setFontSize(9);
-        doc.text("Resumen de Recursos y Eficiencia:", 20, 52);
+            const typeCodes = Object.keys(resultsByType);
+            typeCodes.forEach((typeCode, typeIdx) => {
+                const typePieces = resultsByType[typeCode];
+                const type = typePieces[0].glassType; // Info from first piece
 
-        doc.setDrawColor(226, 232, 240);
-        doc.line(20, 54, pageWidth - 20, 54);
+                if (typeIdx > 0) doc.addPage();
 
-        doc.setFont("helvetica", "bold");
-        doc.text(`Cortes Totales: ${totalCuts}`, 20, 62);
-        doc.text(`Hojas Utilizadas: ${sheetsUsed}`, 75, 62);
-        doc.text(`Rezagos Utilizados: ${remnantsUsed}`, 130, 62);
+                // --- HEADER CONSTANTS ---
+                const pageWidth = 210;
+                const pageHeight = 297;
+                const accentColor = [37, 99, 235]; // Blue 600
+                const darkColor = [30, 41, 59];
 
-        doc.setFont("helvetica", "normal");
-        doc.text(`Área Total: ${(totalAreaAvailable / 1000000).toFixed(2)} m²`, 20, 70);
-        doc.text(`Área Utilizada: ${(totalAreaUsed / 1000000).toFixed(2)} m² (${efficiency}%)`, 75, 70);
-        doc.text(`Área Desperdicio: ${(wasteArea / 1000000).toFixed(2)} m²`, 130, 70);
+                // Color Definitions
+                const colDesperdicio = [241, 245, 249]; // Slate 100
+                const colRezago = [220, 252, 231]; // Emerald 100
 
-        let yOffset = 90;
+                // --- 1. HEADER ---
+                doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+                doc.rect(0, 0, pageWidth, 35, 'F');
 
-        // Find max dimensions for uniform scaling
-        const maxWidth = Math.max(...optimizationResult.map((p: any) => p.dimensions.w));
-        const maxHeight = Math.max(...optimizationResult.map((p: any) => p.dimensions.h));
-        const diagramW = 130;
-        const diagramH = 90;
-        const globalScaleX = diagramW / maxWidth;
-        const globalScaleY = diagramH / maxHeight;
-        const globalScale = Math.min(globalScaleX, globalScaleY);
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(22);
+                doc.setFont("helvetica", "bold");
+                doc.text("Plan de Corte", 14, 18);
 
-        // --- 2. PIECES (GROUPED) ---
-        groupedPieces.forEach((group: any, index: number) => {
-            const piece = group.representative;
-            if (yOffset > 220) {
-                doc.addPage();
-                yOffset = 20;
-            }
-
-            // Piece Title (no enumeration, show count and location)
-            doc.setFillColor(248, 250, 252);
-            doc.rect(14, yOffset - 5, pageWidth - 28, 12, 'F');
-            doc.setTextColor(darkColor.toString());
-            doc.setFontSize(13);
-            doc.setFont("helvetica", "bold");
-            const location = piece.type === 'Rezago' && piece.location ? ` - Ubicación: ${piece.location}` : '';
-            doc.text(`ORIGEN: ${piece.type.toUpperCase()}${location}`, 14, yOffset + 2);
-            doc.setFontSize(11);
-            doc.text(`${piece.dimText} mm`, pageWidth - 60, yOffset + 2);
-            if (group.count > 1) {
                 doc.setFontSize(10);
-                doc.setTextColor(220, 38, 38); // Red for count
-                doc.text(`x${group.count}`, pageWidth - 20, yOffset + 2);
-                doc.setTextColor(darkColor.toString());
-            }
+                doc.setFont("helvetica", "normal");
+                doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 26);
+                doc.text(`Vidrio: ${type?.code} - ${type?.thickness_mm}mm ${type?.color}`, 14, 31);
 
-            yOffset += 12;
+                // --- 2. PIECES ITERATION ---
+                // We create a new page for each SHEET/REMNANT used to maximize clarity
 
-            // DRAW DIAGRAM with uniform scale
-            const startX = 14;
-            const startY = yOffset;
+                typePieces.forEach((piece: any, index: number) => {
+                    if (index > 0) doc.addPage();
 
-            // Use uniform scale for all pieces
-            const scaledW = piece.dimensions.w * globalScale;
-            const scaledH = piece.dimensions.h * globalScale;
-
-            // Outer Container Rect
-            doc.setDrawColor(203, 213, 225);
-            doc.setLineWidth(0.3);
-            doc.rect(startX, startY, scaledW, scaledH);
-
-            piece.cuts.forEach((cut: any) => {
-                const cw = cut.width_mm * globalScale;
-                const ch = cut.height_mm * globalScale;
-                const cx = startX + (cut.posX * globalScale);
-                const cy = startY + (cut.posY * globalScale);
-
-                // Draw Cut Rect
-                doc.setDrawColor(37, 99, 235);
-                doc.setFillColor(239, 246, 255);
-                doc.setLineWidth(0.4);
-                doc.rect(cx, cy, cw, ch, 'FD');
-
-                // Draw Inner Labels with better visibility
-                if (cw > 12 && ch > 6) {
-                    doc.setFontSize(7);
+                    // -- A. Piece Header
+                    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+                    doc.setFontSize(14);
                     doc.setFont("helvetica", "bold");
-                    doc.setTextColor(accentColor.toString());
-                    doc.text(`${cut.width_mm}x${cut.height_mm}`, cx + 1, cy + 4);
-                    if (cw > 20 && ch > 10) {
-                        doc.setFontSize(6);
-                        doc.setFont("helvetica", "normal");
-                        doc.setTextColor(100, 116, 139);
-                        doc.text(cut.orders?.client_name?.substring(0, 12) || 'Stock', cx + 1, cy + 8);
+                    // removed ID display from header label
+                    const originText = piece.type === 'Rezago' ? `REZAGO` : `HOJA ENTERA`;
+                    const locationText = piece.location ? ` @ ${piece.location}` : '';
+                    doc.text(`${index + 1}. ${originText} - ${piece.dimText} mm${locationText}`, 14, 45); // Moved down
+
+                    // -- B. Reconstruct Geometry (Shelves & Waste)
+                    // 1. Sort cuts by Y then X
+                    const sortedCuts = [...piece.cuts].sort((a, b) => a.posY - b.posY || a.posX - b.posX);
+
+                    // 2. Identify Shelves
+                    const shelves: any[] = [];
+                    let currentY = -1;
+                    let currentShelf: any = null;
+
+                    sortedCuts.forEach(cut => {
+                        // Simple heuristic: if Y is significantly different, new shelf
+                        if (!currentShelf || Math.abs(cut.posY - currentY) > 1) {
+                            currentY = cut.posY;
+                            currentShelf = { y: currentY, h: 0, cuts: [] };
+                            shelves.push(currentShelf);
+                        }
+                        currentShelf.cuts.push(cut);
+                        currentShelf.h = Math.max(currentShelf.h, cut.height_mm);
+                    });
+
+                    // 3. Wastes are now from STATE (piece.wastes)
+                    const wastes = piece.wastes || []; // Use stored wastes
+                    const sheetW = piece.dimensions.w;
+                    const sheetH = piece.dimensions.h;
+
+                    // -- C. DRAW DIAGRAM (Scaled to fit page width)
+                    const diagramTopY = 55; // Increased margin
+                    const diagramMaxH = 120; // Decreased height
+                    const diagramMaxW = 160; // margins
+
+                    const scaleX = diagramMaxW / sheetW;
+                    const scaleY = diagramMaxH / sheetH;
+                    const scale = Math.min(scaleX, scaleY);
+
+                    // Draw Sheet Boundary
+                    doc.setDrawColor(0, 0, 0);
+                    doc.setLineWidth(0.5);
+                    doc.rect(14, diagramTopY, sheetW * scale, sheetH * scale); // Outer frame
+
+                    // Draw Cuts and Cut Lines
+                    doc.setFontSize(8);
+
+                    // 1. Draw Wastes (Light Grey)
+                    wastes.forEach((w: any) => {
+                        const wx = 14 + w.x * scale;
+                        const wy = diagramTopY + w.y * scale;
+                        const ww = w.w * scale;
+                        const wh = w.h * scale;
+
+                        const [r, g, b] = w.saved ? colRezago : colDesperdicio;
+                        doc.setFillColor(r, g, b);
+                        doc.rect(wx, wy, ww, wh, 'F');
+
+                        // Label waste dimensions if big enough
+                        if (ww > 15 && wh > 8) {
+                            doc.setTextColor(150, 150, 150);
+                            doc.setFont("helvetica", "italic");
+                            doc.setFontSize(6);
+                            doc.text(`${Math.round(w.w)}x${Math.round(w.h)}`, wx + ww / 2, wy + wh / 2, { align: 'center' });
+
+                            if (ww > 30 && wh > 15 && w.saved) {
+                                doc.setTextColor(22, 163, 74); // Green Text
+                                doc.text("[REZAGO]", wx + ww / 2, wy + wh / 2 + 3, { align: 'center' });
+                            }
+                        }
+                    });
+
+                    // 2. Draw Cuts (Blueish)
+                    piece.cuts.forEach((cut: any) => {
+                        const cx = 14 + cut.posX * scale;
+                        const cy = diagramTopY + cut.posY * scale;
+                        const cw = cut.width_mm * scale;
+                        const ch = cut.height_mm * scale;
+
+                        doc.setFillColor(230, 240, 255);
+                        doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2]); // Blue border for cuts
+                        doc.setLineWidth(0.3);
+                        doc.rect(cx, cy, cw, ch, 'FD'); // Fill and Draw
+
+                        // Text
+                        if (cw > 10 && ch > 6) {
+                            doc.setTextColor(0, 0, 0);
+                            doc.setFont("helvetica", "bold");
+                            doc.setFontSize(cw > 25 ? 9 : 7);
+                            doc.text(`${cut.width_mm}x${cut.height_mm}`, cx + cw / 2, cy + ch / 2 + 1, { align: 'center' });
+
+                            // Client Name & Legacy
+                            if (cw > 30 && ch > 12) {
+                                doc.setFontSize(6);
+                                doc.setFont("helvetica", "normal");
+                                const legacy = cut.orders?.legacy_order_number ? ` / L:${cut.orders.legacy_order_number}` : '';
+                                doc.text((cut.orders?.client_name?.substring(0, 15) || '') + legacy, cx + cw / 2, cy + ch / 2 + 4, { align: 'center' });
+                            }
+                        }
+                    });
+
+                    // 3. Draw CUT LINES (Red/Bold/Dashed to indicate guillotine)
+                    // H-Cuts (Shelf bottoms)
+                    doc.setDrawColor(220, 50, 50); // Red
+                    doc.setLineWidth(0.2);
+                    doc.setLineDashPattern([2, 2], 0); // Dashed
+
+                    shelves.forEach(shelf => {
+                        // Line across the whole meaningful width (or full sheet for first cut)
+                        // Usually guillotine cuts horizontal first across whole sheet.
+                        const y = diagramTopY + (shelf.y + shelf.h) * scale;
+                        if (y < diagramTopY + sheetH * scale) { // Don't draw if it's the bottom edge
+                            doc.line(14, y, 14 + sheetW * scale, y);
+                        }
+
+                        // Vertical cuts (within shelf)
+                        let cx = 0;
+                        shelf.cuts.forEach((cut: any, idx: number) => {
+                            cx = cut.posX + cut.width_mm;
+                            // Don't draw if it's the right edge of sheet
+                            if (cx < sheetW) {
+                                const vx = 14 + cx * scale;
+                                const vy_start = diagramTopY + shelf.y * scale;
+                                const vy_end = diagramTopY + (shelf.y + shelf.h) * scale;
+                                doc.line(vx, vy_start, vx, vy_end);
+                            }
+                        });
+                    });
+                    doc.setLineDashPattern([], 0); // Reset dash
+
+                    // -- D. TABLES
+                    let tableY = diagramTopY + (sheetH * scale) + 10;
+
+                    // Table 1: Cuts List
+                    const cutsData = piece.cuts.map((c: any, i: number) => {
+                        const legacy = c.orders?.legacy_order_number ? `(${c.orders.legacy_order_number})` : '';
+                        return [
+                            i + 1,
+                            `${c.width_mm} x ${c.height_mm}`,
+                            c.quantity || 1,
+                            c.orders?.client_name || '-',
+                            `${c.orders?.order_number || '-'} ${legacy}`
+                        ];
+                    });
+
+                    autoTable(doc, {
+                        startY: tableY,
+                        head: [['#', 'Medida', 'Cant', 'Cliente', 'Orden']],
+                        body: cutsData,
+                        theme: 'grid',
+                        styles: { fontSize: 8, cellPadding: 2 },
+                        headStyles: { fillColor: [50, 50, 50] },
+                        columnStyles: { 0: { cellWidth: 10 }, 1: { fontStyle: 'bold' } }
+                    });
+
+                    // Table 2: Waste List (wastes from state)
+                    // "listar todos los rezago" => users want to see everything?
+                    // "dejar decidir al usuario cuales son reutilizables"
+                    // We list all wastes that are somewhat significant > 50x50
+                    const reportableWastes = wastes.filter((w: any) => w.w > 50 && w.h > 50);
+
+                    if (reportableWastes.length > 0) {
+                        const remData = reportableWastes.map((r: any) => [
+                            // `R-${i+1}`, // ID removed as per request "No mostrar el id"
+                            `${Math.round(r.w)} x ${Math.round(r.h)}`,
+                            r.label
+                        ]);
+
+                        autoTable(doc, {
+                            startY: (doc as any).lastAutoTable.finalY + 8,
+                            head: [['Medida', 'Clasificación']], // Removed ID header
+                            body: remData,
+                            theme: 'striped',
+                            styles: { fontSize: 8, cellPadding: 2, textColor: [50, 50, 50] },
+                            headStyles: { fillColor: [200, 200, 200], textColor: [0, 0, 0] },
+                            didParseCell: (data) => {
+                                if (data.section === 'body' && data.column.index === 1) { // Index 1 is now Classification
+                                    if (data.cell.raw === 'REZAGO') { // Simplified label
+                                        data.cell.styles.textColor = [22, 163, 74]; // Green
+                                        data.cell.styles.fontStyle = 'bold';
+                                    } else {
+                                        data.cell.styles.textColor = [150, 150, 150]; // Light Grey
+                                    }
+                                }
+                            }
+                        });
                     }
-                }
+                });
             });
 
-            // Summary Table next to diagram (no enumeration, with order numbers)
-            const tableData = piece.cuts.map((c: any) => [
-                c.width_mm + "x" + c.height_mm,
-                c.quantity || 1,
-                c.orders?.client_name || '-',
-                c.orders?.order_number || c.orders?.old_order_number || '-'
-            ]);
 
-            autoTable(doc, {
-                startY: yOffset,
-                margin: { left: startX + scaledW + 5 },
-                tableWidth: pageWidth - (startX + scaledW + 20),
-                head: [['Medidas', 'Cant', 'Cliente', 'N° Orden']],
-                body: tableData,
-                theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 1.5, font: 'helvetica' },
-                headStyles: { fillColor: [71, 85, 105], fontStyle: 'bold', fontSize: 9 },
-                columnStyles: {
-                    0: { fontStyle: 'bold', halign: 'center' },
-                    1: { halign: 'center', fontStyle: 'bold' },
-                    3: { halign: 'center' }
-                }
-            });
 
-            yOffset = Math.max((doc as any).lastAutoTable.finalY + 15, startY + scaledH + 15);
-        });
+            // --- 3. EXCLUDED CUTS PAGE (If any) ---
+            if (excludedCuts && excludedCuts.length > 0) {
+                doc.addPage();
+                doc.setTextColor(220, 38, 38); // Red
+                doc.setFontSize(18);
+                doc.setFont("helvetica", "bold");
+                doc.text("Cortes No Optimizados / Faltante de Material", 14, 20);
 
-        if (returnBase64) {
-            return doc.output('datauristring');
-        } else {
-            const pdfBlob = doc.output('bloburl');
-            if (!returnBase64 && typeof window !== 'undefined') {
-                window.open(pdfBlob, '_blank');
+                doc.setFontSize(10);
+                doc.setTextColor(50, 50, 50);
+                doc.setFont("helvetica", "normal");
+                doc.text("Los siguientes cortes no pudieron ser ubicados en ninguna hoja o rezago disponible debido a su tamaño o falta de stock.", 14, 28);
+
+                const excludedData = excludedCuts.map((c: any) => [
+                    `${c.glass_types?.code} - ${c.glass_types?.color}`,
+                    `${c.width_mm} x ${c.height_mm}`,
+                    c.orders?.client_name || '-',
+                    `#${c.orders?.order_number || '-'}`,
+                    c.orders?.legacy_order_number || '-'
+                ]);
+
+                autoTable(doc, {
+                    startY: 35,
+                    head: [['Vidrio', 'Medida', 'Cliente', 'Orden', 'Orden Ant.']],
+                    body: excludedData,
+                    theme: 'grid',
+                    styles: { fontSize: 10, cellPadding: 3 },
+                    headStyles: { fillColor: [220, 38, 38], textColor: [255, 255, 255] }
+                });
             }
-            return pdfBlob;
+
+            if (action === 'base64') {
+                return doc.output('datauristring');
+            } else if (action === 'blob') {
+                return doc.output('bloburl');
+            } else {
+                doc.save(`plan-corte-${Date.now()}.pdf`);
+            }
+
+        } catch (error) {
+            console.error("PDF Generation Error:", error);
+            alert("Error generando el PDF. Revisa la consola.");
         }
     };
 
     const handlePreview = () => {
-        const url = generatePDF(true) as string;
+        const url = generatePDF('blob') as string;
         setPdfUrl(url);
         setShowPreview(true);
     };
@@ -523,51 +724,50 @@ export default function CuttingOptimizer() {
                         <Scissors className="w-6 h-6 text-blue-600" />
                         Optimizador de Cortes
                     </h2>
-                    <p className="text-sm text-slate-500">Combina pedidos para minimizar desperdicio.</p>
+                    <p className="text-sm text-slate-500">Combina pedidos para minimizer desperdicio en múltiples tipos de vidrio.</p>
                 </div>
-
-                <select
-                    value={selectedType}
-                    onChange={e => setSelectedType(e.target.value)}
-                    className="w-full md:w-64 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                <button
+                    onClick={fetchData}
+                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                 >
-                    {glassTypes.map(t => {
-                        const pendingCount = pendingCutsCounts[t.id] || 0;
-                        return (
-                            <option key={t.id} value={t.id}>
-                                {t.code} - {t.thickness_mm}mm {t.color}
-                                {pendingCount > 0 ? ` (${pendingCount} pendientes)` : ''}
-                            </option>
-                        );
-                    })}
-                </select>
+                    Actualizar
+                </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left: Pending Cuts */}
                 <div className="lg:col-span-2 space-y-4">
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between">
+                        <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                             <h3 className="font-semibold text-slate-700 flex items-center gap-2">
                                 <Layers className="w-4 h-4 text-blue-600" /> Cortes Pendientes
                             </h3>
-                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
+                            <div className="flex-1"></div>
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold mr-2">
                                 {pendingCuts.length}
                             </span>
+                            <button
+                                onClick={selectAllCuts}
+                                className="text-xs text-blue-600 hover:underline font-medium"
+                            >
+                                {selectedCuts.length === pendingCuts.length ? "Deseleccionar" : "Seleccionar Todo"}
+                            </button>
                         </div>
                         <div className="max-h-[500px] overflow-y-auto">
                             <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-50 sticky top-0 border-b">
+                                <thead className="bg-slate-50 sticky top-0 border-b z-10">
                                     <tr>
-                                        <th className="px-4 py-3"><input type="checkbox" disabled /></th>
+                                        <th className="px-4 py-3 w-8"><input type="checkbox" checked={selectedCuts.length > 0 && selectedCuts.length === pendingCuts.length} onChange={selectAllCuts} /></th>
+                                        <th className="px-4 py-3">Vidrio</th>
                                         <th className="px-4 py-3">Cliente / Obra</th>
                                         <th className="px-4 py-3">Medidas</th>
                                         <th className="px-4 py-3 text-center">Cant</th>
+                                        <th className="px-4 py-3">Fecha</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {loading && pendingCuts.length === 0 ? (
-                                        <tr><td colSpan={4} className="px-4 py-12 text-center text-slate-400">Cargando...</td></tr>
+                                        <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">Cargando...</td></tr>
                                     ) : pendingCuts.map(cut => (
                                         <tr
                                             key={cut.id}
@@ -577,13 +777,33 @@ export default function CuttingOptimizer() {
                                             <td className="px-4 py-3">
                                                 <input type="checkbox" checked={selectedCuts.includes(cut.id)} readOnly />
                                             </td>
-                                            <td className="px-4 py-3 font-medium text-slate-800">{cut.orders?.client_name}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${cut.glass_types?.color?.includes('Incoloro') ? 'bg-slate-100 border-slate-300 text-slate-600' :
+                                                    cut.glass_types?.color?.includes('Bronce') ? 'bg-orange-50 border-orange-200 text-orange-700' :
+                                                        cut.glass_types?.color?.includes('Gris') ? 'bg-gray-200 border-gray-300 text-gray-700' :
+                                                            'bg-blue-50 border-blue-200 text-blue-700'
+                                                    }`}>
+                                                    {cut.glass_types?.thickness_mm}mm - {cut.glass_types?.color}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 font-medium text-slate-800">
+                                                <div className="flex flex-col">
+                                                    <span>{cut.orders?.client_name}</span>
+                                                    <span className="text-[10px] text-slate-400">
+                                                        #{cut.orders?.order_number}
+                                                        {cut.orders?.legacy_order_number && <span className="text-slate-500"> (L: {cut.orders.legacy_order_number})</span>}
+                                                    </span>
+                                                </div>
+                                            </td>
                                             <td className="px-4 py-3 font-mono text-slate-600">{cut.width_mm} x {cut.height_mm}</td>
-                                            <td className="px-4 py-3 text-center font-bold">{cut.quantity}</td>
+                                            <td className="px-4 py-3 text-center font-bold px-4">{cut.quantity}</td>
+                                            <td className="px-4 py-3 text-xs text-slate-400">
+                                                {new Date(cut.orders?.created_at).toLocaleDateString()}
+                                            </td>
                                         </tr>
                                     ))}
                                     {pendingCuts.length === 0 && !loading && (
-                                        <tr><td colSpan={4} className="px-4 py-12 text-center text-slate-400">No hay cortes pendientes para este tipo.</td></tr>
+                                        <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">No hay cortes pendientes.</td></tr>
                                     )}
                                 </tbody>
                             </table>
@@ -595,99 +815,107 @@ export default function CuttingOptimizer() {
                         disabled={selectedCuts.length === 0 || loading || !canRun}
                         className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all font-semibold shadow-md"
                     >
-                        <Play className="w-5 h-5" /> {canRun ? 'Calcular Corte Óptimo' : 'Sin Permiso para Calcular'}
+                        <Play className="w-5 h-5" /> {canRun ? 'Calcular Optimización' : 'Sin Permiso para Calcular'}
                     </button>
+
+                    {selectedCuts.length > 0 && (
+                        <div className="flex justify-end pt-2">
+                            <span className="text-sm text-slate-500">{selectedCuts.length} cortes seleccionados</span>
+                        </div>
+                    )}
                 </div>
 
-                {/* Right: Stock & Result */}
+                {/* Right: Results Preview */}
                 <div className="space-y-6">
-                    {/* Stock Info */}
-                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                            <Box className="w-4 h-4 text-emerald-600" /> Stock Disponible
-                        </h3>
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                                <span className="text-sm">Hojas Enteras</span>
-                                <span className="font-bold text-lg">{availableStock.sheets}</span>
-                            </div>
-                            <div className="space-y-2">
-                                <span className="text-xs font-medium text-slate-500 block uppercase">Rezagos compatibles</span>
-                                {availableStock.remnants.slice(0, 3).map(r => (
-                                    <div key={r.id} className="text-xs bg-slate-50 p-2 rounded border border-slate-100 flex justify-between">
-                                        <span>{r.width_mm} x {r.height_mm}mm</span>
-                                        <span className="text-slate-400">Cant: {r.quantity}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
                     {/* Results Card */}
                     {optimizationResult && (
-                        <div className="bg-white rounded-xl border-2 border-blue-500 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+                        <div className="bg-white rounded-xl border-2 border-blue-500 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 sticky top-6">
                             <div className="p-4 bg-blue-500 text-white flex justify-between items-center">
                                 <div className="flex items-center gap-2">
                                     <CheckCircle2 className="w-5 h-5" />
-                                    <h3 className="font-bold">Plan de Optimización</h3>
+                                    <h3 className="font-bold">Plan Generado</h3>
                                 </div>
                                 <div className="flex gap-2">
                                     <button
                                         onClick={handlePreview}
                                         className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold"
                                     >
-                                        <FileText className="w-4 h-4" /> VER PREVIA
+                                        <FileText className="w-4 h-4" /> VER PDF
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="p-4 space-y-4 max-h-[400px] overflow-y-auto">
+                            <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto">
+                                {excludedCuts && excludedCuts.length > 0 && (
+                                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4">
+                                        <div className="flex items-center gap-2 text-red-700 font-bold text-xs mb-1">
+                                            <AlertCircle className="w-4 h-4" />
+                                            <span>{excludedCuts.length} Cortes Excluidos</span>
+                                        </div>
+                                        <p className="text-[10px] text-red-600 mb-2">
+                                            Exceden el tamaño del stock disponible.
+                                        </p>
+                                        <div className="max-h-32 overflow-y-auto pr-1 custom-scrollbar">
+                                            <ul className="space-y-1">
+                                                {excludedCuts.map((c: any, i: number) => (
+                                                    <li key={i} className="text-[10px] text-red-600 flex justify-between border-b border-red-100 last:border-0 pb-1">
+                                                        <span>{c.glass_types?.code} - {c.glass_types?.color}</span>
+                                                        <span className="font-mono">{c.width_mm}x{c.height_mm}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                )}
+                                <p className="text-xs text-slate-500 italic text-center mb-2">
+                                    Se han generado {optimizationResult.length} piezas de corte.
+                                </p>
                                 {optimizationResult.map((piece: any, idx: number) => (
                                     <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-xs font-bold uppercase text-slate-500">{idx + 1}. {piece.type}</span>
-                                            <span className="text-xs font-mono bg-white px-2 py-1 rounded border">{piece.dimText}</span>
+                                        <div className="flex justify-between items-center mb-2 border-b border-slate-200 pb-2">
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${piece.type === 'Rezago' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                {piece.type}
+                                            </span>
+                                            <span className="text-xs font-bold text-slate-700">{piece.glassType.code}</span>
                                         </div>
+                                        <div className="text-xs mb-2 text-center text-slate-500">
+                                            {piece.dimText}
+                                        </div>
+
                                         <div className="space-y-1">
-                                            {piece.cuts.map((c: any, cidx: number) => (
-                                                <div key={cidx} className="text-sm flex justify-between">
-                                                    <span className="text-slate-700">{c.orders?.client_name}</span>
-                                                    <span className="font-mono text-slate-500">{c.width_mm}x{c.height_mm}</span>
+                                            {piece.cuts.slice(0, 3).map((c: any, cidx: number) => (
+                                                <div key={cidx} className="text-xs flex justify-between text-slate-600">
+                                                    <span>{c.orders?.client_name.substring(0, 15)}</span>
+                                                    <span className="font-mono">{c.width_mm}x{c.height_mm}</span>
                                                 </div>
                                             ))}
-                                        </div>
-                                        {piece.newRemnant && piece.newRemnant.height_mm > 50 && (
-                                            <div className="mt-3 pt-3 border-t border-dashed border-slate-300 space-y-2">
-                                                <div className="flex items-center justify-between">
-                                                    <div>
-                                                        <p className="text-[10px] text-emerald-600 font-bold uppercase">Sobrante ({piece.newRemnant.width_mm}x{piece.newRemnant.height_mm}):</p>
-                                                        <label className="flex items-center gap-2 mt-1 cursor-pointer">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={piece.newRemnant.saveAsRemnant}
-                                                                onChange={(e) => updateRemnantSetting(idx, 'saveAsRemnant', e.target.checked)}
-                                                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                                                            />
-                                                            <span className="text-xs font-semibold text-slate-700">Guardar como Rezago</span>
-                                                        </label>
-                                                    </div>
+                                            {piece.cuts.length > 3 && (
+                                                <div className="text-[10px] text-center text-slate-400 italic">
+                                                    + {piece.cuts.length - 3} cortes más...
                                                 </div>
-                                                {piece.newRemnant.saveAsRemnant && (
-                                                    <div className="animate-in fade-in slide-in-from-top-1">
+                                            )}
+                                        </div>
+
+                                        <div className="mt-3 pt-2 border-t border-dashed border-slate-300 space-y-2">
+                                            {piece.wastes.map((waste: any) => (
+                                                <div key={waste.id} className="flex flex-col text-[10px]">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className={`font-bold ${waste.saved ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                            {waste.saved ? 'REZAGO' : 'D'}: {Math.round(waste.w)}x{Math.round(waste.h)}
+                                                        </span>
                                                         <input
-                                                            type="text"
-                                                            placeholder="Estiva / Ubicación (opcional)"
-                                                            value={piece.newRemnant.location}
-                                                            onChange={(e) => updateRemnantSetting(idx, 'location', e.target.value)}
-                                                            className="w-full text-[11px] px-2 py-1.5 border rounded bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                                            type="checkbox"
+                                                            checked={waste.saved}
+                                                            onChange={(e) => updateRemnantSetting(idx, waste.id, 'saved', e.target.checked)}
+                                                            className={`w-3 h-3 rounded ${waste.saved ? 'text-emerald-600' : 'text-slate-300'}`}
                                                         />
                                                     </div>
-                                                )}
-                                                {!piece.newRemnant.saveAsRemnant && (
-                                                    <p className="text-[11px] text-slate-400 italic">Será descartado como desperdicio.</p>
-                                                )}
-                                            </div>
-                                        )}
+                                                </div>
+                                            ))}
+                                            {piece.wastes.length === 0 && (
+                                                <p className="text-[10px] text-slate-400 italic text-center">Sin desperdicios utilizables.</p>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -698,24 +926,30 @@ export default function CuttingOptimizer() {
                                     disabled={loading || !canRun}
                                     className="w-full bg-emerald-600 text-white py-2 rounded-lg hover:bg-emerald-700 font-bold shadow-sm transition-all disabled:opacity-50"
                                 >
-                                    {loading ? "Procesando..." : (canRun ? "Confirmar y Descontar Todo" : "Solo Lectura")}
+                                    {loading ? "Procesando..." : (canRun ? "Confirmar y Descontar" : "Solo Lectura")}
                                 </button>
                                 <button
                                     onClick={() => setOptimizationResult(null)}
                                     className="w-full text-slate-500 text-xs py-1 hover:underline text-center"
                                 >
-                                    Cancelar y Volver
+                                    Cancelar
                                 </button>
                             </div>
                         </div>
                     )}
 
                     {!optimizationResult && selectedCuts.length > 0 && (
-                        <div className="bg-amber-50 p-6 rounded-xl border border-amber-200 flex gap-3 text-amber-700">
+                        <div className="bg-amber-50 p-6 rounded-xl border border-amber-200 flex gap-3 text-amber-700 animate-pulse">
                             <AlertCircle className="w-5 h-5 shrink-0" />
                             <p className="text-sm">
-                                Seleccionaste <b>{selectedCuts.length}</b> cortes. Haz clic en "Calcular" para ver cómo distribuirlos.
+                                Tienes <b>{selectedCuts.length}</b> cortes seleccionados. Presiona "Calcular".
                             </p>
+                        </div>
+                    )}
+                    {!optimizationResult && selectedCuts.length === 0 && (
+                        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 text-center text-slate-400">
+                            <LayoutGrid className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                            <p className="text-sm">Selecciona cortes de la lista para comenzar una optimización.</p>
                         </div>
                     )}
                 </div>

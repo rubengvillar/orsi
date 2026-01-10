@@ -54,7 +54,8 @@ export default function OrderCutsList({ orderId }: OrderCutsListProps) {
             width_mm: parseInt(formData.width_mm),
             height_mm: parseInt(formData.height_mm),
             quantity: parseInt(formData.quantity),
-            notes: formData.notes
+            notes: formData.notes,
+            status: 'pending'
         });
 
         if (error) alert(error.message);

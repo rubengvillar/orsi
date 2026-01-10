@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Clock, User, Package, Calendar, Edit2, Save, X } from "lucide-react";
+import { Clock, User, Package, Calendar, Edit2, Save, X, Scissors } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import MaterialUsageForm from "./MaterialUsageForm";
 import OrderCutsList from "./OrderCutsList";
@@ -130,7 +130,7 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
 
             if (deleteError) throw deleteError;
 
-            const operatorLinks = [];
+            const operatorLinks: any[] = [];
             editFormData.cutter_ids.forEach(id => {
                 operatorLinks.push({ order_id: orderId, operator_id: id, role: 'Cutter' });
             });
@@ -316,6 +316,16 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
                                         >
                                             <Edit2 className="w-3.5 h-3.5" /> Editar
                                         </button>
+
+                                        {(order.status === 'Ready for Cutting' || order.status === 'Pending') && (
+                                            <button
+                                                onClick={() => handleStatusChange("Cut")}
+                                                className="flex items-center gap-1.5 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-sm"
+                                            >
+                                                <Scissors className="w-3.5 h-3.5" /> Marcar como Cortado
+                                            </button>
+                                        )}
+
                                         <select
                                             value={order.status}
                                             onChange={(e) => handleStatusChange(e.target.value)}
