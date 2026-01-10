@@ -1,0 +1,39 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import RouteManager from "../../components/logistics/RouteManager";
+---
+
+<DashboardLayout title="Logística y Despacho">
+    <div className="mb-6 print:hidden">
+        <h1 className="text-3xl font-bold text-slate-800">
+            Logística y Coordinación
+        </h1>
+        <p className="text-slate-500 mt-2">
+            Planifica las hojas de ruta, asigna vehículos y coordinadores para
+            la instalación.
+        </p>
+    </div>
+
+    <RouteManager client:load />
+
+    <style is:global>
+        @media print {
+            /* Hide Sidebar and standard Layout elements */
+            nav,
+            aside,
+            header {
+                display: none !important;
+            }
+
+            /* Ensure body allows print specific layout */
+            body {
+                background: white;
+            }
+
+            @page {
+                size: landscape;
+                margin: 1cm;
+            }
+        }
+    </style>
+</DashboardLayout>

@@ -40,11 +40,15 @@ export const PERMISSIONS = {
 
     ADMIN_VEHICLES_VIEW: 'vehicles:view',
     ADMIN_VEHICLES_WRITE: 'vehicles:manage',
+
+    LOGISTICS_VIEW: 'logistics:view',
+    LOGISTICS_WRITE: 'logistics:manage',
 };
 
 export const PATH_PERMISSIONS: Record<string, string> = {
     '/dashboard': PERMISSIONS.DASHBOARD,
     '/orders': PERMISSIONS.ORDERS_VIEW,
+    '/logistics': PERMISSIONS.LOGISTICS_VIEW,
     '/inventory/accessories': PERMISSIONS.INVENTORY_ACCESSORIES_VIEW,
     '/inventory/profiles': PERMISSIONS.INVENTORY_PROFILES_VIEW,
     '/inventory/glass': PERMISSIONS.INVENTORY_GLASS_VIEW,

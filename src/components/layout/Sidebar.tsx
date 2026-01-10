@@ -70,6 +70,7 @@ export default function Sidebar({ currentPath }: SidebarProps) {
             items: [
                 { label: "Optimizar Cortes", href: "/inventory/optimizer", icon: Scissors, permission: PERMISSIONS.OPTIMIZER_VIEW },
                 { label: "Plan de Cortes", href: "/inventory/cuts", icon: Scissors, permission: PERMISSIONS.CUTS_VIEW },
+                { label: "Logística", href: "/admin/logistics", icon: Truck, permission: PERMISSIONS.LOGISTICS_VIEW },
             ]
         },
         {

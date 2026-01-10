@@ -79,23 +79,7 @@ export interface GlassAccessory {
     created_at: string;
 }
 
-export type Database = {
-    public: {
-        Tables: {
-            roles: { Row: Role; Insert: Omit<Role, 'id'>; Update: Partial<Role> };
-            permissions: { Row: Permission; Insert: Omit<Permission, 'id'>; Update: Partial<Permission> };
-            role_permissions: { Row: RolePermission; Insert: RolePermission; Update: RolePermission };
-            user_roles: { Row: UserRole; Insert: UserRole; Update: UserRole };
-            aluminum_accessories: { Row: AluminumAccessory; Insert: Omit<AluminumAccessory, 'id'>; Update: Partial<AluminumAccessory> };
-            aluminum_profiles: { Row: AluminumProfile; Insert: Omit<AluminumProfile, 'id'>; Update: Partial<AluminumProfile> };
-            glass_types: { Row: GlassType; Insert: Omit<GlassType, 'id'>; Update: Partial<GlassType> };
-            glass_sheets: { Row: GlassSheet; Insert: Omit<GlassSheet, 'id'>; Update: Partial<GlassSheet> };
-            glass_remnants: { Row: GlassRemnant; Insert: Omit<GlassRemnant, 'id'>; Update: Partial<GlassRemnant> };
-            glass_accessories: { Row: GlassAccessory; Insert: Omit<GlassAccessory, 'id'>; Update: Partial<GlassAccessory> };
-            vehicles: { Row: Vehicle; Insert: Omit<Vehicle, 'id'>; Update: Partial<Vehicle> };
-        };
-    };
-};
+
 
 export interface Vehicle {
     id: string;
@@ -110,3 +94,30 @@ export interface Vehicle {
     created_at: string;
     updated_at: string;
 }
+
+export interface Route {
+    id: string;
+    date: string;
+    vehicle_id: string | null;
+    driver_id: string | null;
+    installer_ids: string[] | null;
+    notes: string | null;
+    status: 'draft' | 'confirmed' | 'completed' | 'cancelled';
+    created_at: string;
+    updated_at: string;
+    created_by: string | null;
+}
+
+export interface RouteStop {
+    id: string;
+    route_id: string;
+    order_id: string;
+    arrival_time: string;
+    estimated_duration: string | null;
+    installers_required: number;
+    notes: string | null;
+    created_at: string;
+    order?: any; // For joins
+}
+
+
