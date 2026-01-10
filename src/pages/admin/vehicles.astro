@@ -1,0 +1,18 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import VehicleManagerFn from "../../components/admin/VehicleManager";
+---
+
+<DashboardLayout title="Gestión de Vehículos">
+    <div className="mb-6">
+        <h1 className="text-3xl font-bold text-slate-800">
+            Gestión de Vehículos y Logística
+        </h1>
+        <p className="text-slate-500 mt-2">
+            Administra la flota de vehículos y sus capacidades de carga para el
+            control de despachos.
+        </p>
+    </div>
+
+    <VehicleManagerFn client:load />
+</DashboardLayout>

@@ -92,6 +92,21 @@ export type Database = {
             glass_sheets: { Row: GlassSheet; Insert: Omit<GlassSheet, 'id'>; Update: Partial<GlassSheet> };
             glass_remnants: { Row: GlassRemnant; Insert: Omit<GlassRemnant, 'id'>; Update: Partial<GlassRemnant> };
             glass_accessories: { Row: GlassAccessory; Insert: Omit<GlassAccessory, 'id'>; Update: Partial<GlassAccessory> };
+            vehicles: { Row: Vehicle; Insert: Omit<Vehicle, 'id'>; Update: Partial<Vehicle> };
         };
     };
 };
+
+export interface Vehicle {
+    id: string;
+    brand: string;
+    model: string;
+    license_plate: string;
+    max_passengers: number;
+    max_load_width_mm: number;
+    max_load_height_mm: number;
+    max_load_length_mm: number;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}

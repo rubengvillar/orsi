@@ -37,6 +37,9 @@ export const PERMISSIONS = {
 
     ADMIN_ORDER_STATUSES_VIEW: 'admin:order-statuses:view',
     ADMIN_ORDER_STATUSES_WRITE: 'admin:order-statuses:write',
+
+    ADMIN_VEHICLES_VIEW: 'vehicles:view',
+    ADMIN_VEHICLES_WRITE: 'vehicles:manage',
 };
 
 export const PATH_PERMISSIONS: Record<string, string> = {
@@ -54,5 +57,6 @@ export const PATH_PERMISSIONS: Record<string, string> = {
     '/admin/permissions': PERMISSIONS.ADMIN_PERMISSIONS_VIEW,
     '/admin/audit': PERMISSIONS.ADMIN_AUDIT_VIEW,
     '/admin/order-statuses': PERMISSIONS.ADMIN_ORDER_STATUSES_VIEW,
+    '/admin/vehicles': PERMISSIONS.ADMIN_VEHICLES_VIEW,
     '/orders/': PERMISSIONS.ORDERS_VIEW, // Prefix match for dynamic order IDs
 };
