@@ -3,6 +3,7 @@ import { Clock, User, Package, Calendar, Edit2, Save, X, Scissors } from "lucide
 import { supabase } from "../../lib/supabase";
 import MaterialUsageForm from "./MaterialUsageForm";
 import OrderCutsList from "./OrderCutsList";
+import OrderAttachments from "./OrderAttachments";
 
 interface OrderDetailsProps {
     orderId: string;
@@ -510,6 +511,11 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* Attachments Section */}
+                <div className="mb-6">
+                    <OrderAttachments orderId={orderId} />
                 </div>
 
                 {/* Usage History */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
-import { Users, UserPlus, Search, Shield, Mail, Trash2, MoreVertical, Edit2, Key } from "lucide-react";
+import { Users, UserPlus, Search, Shield, Mail, Trash2, MoreVertical, Edit2, Key, Phone, Ban, CheckCircle } from "lucide-react";
 import { Modal } from "../ui/Modal";
 
 export default function AdminUserManager() {
@@ -9,13 +9,18 @@ export default function AdminUserManager() {
     const [roles, setRoles] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
+
+    // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalMode, setModalMode] = useState<'invite' | 'edit'>('invite');
+    const [selectedUser, setSelectedUser] = useState<any>(null);
 
     // Form State
     const [formData, setFormData] = useState({
         email: "",
         full_name: "",
-        role_id: ""
+        role_id: "",
+        phone: ""
     });
 
     useEffect(() => {
@@ -42,11 +47,7 @@ export default function AdminUserManager() {
                         full_name: authUser.user_metadata?.full_name || "Administrador"
                     });
 
-                    if (insError) {
-                        console.error("Error al restaurar perfil:", insError);
-                    } else {
-                        console.log("Perfil restaurado con éxito.");
-                    }
+                    if (insError) console.error("Error al restaurar perfil:", insError);
                 }
             }
 
@@ -57,7 +58,6 @@ export default function AdminUserManager() {
                 .order('created_at', { ascending: false });
 
             if (pError) throw pError;
-            console.log(`Fetched ${profiles?.length} profiles`);
 
             // 2. Fetch Assignments (user_id -> role info)
             const { data: assignments, error: aError } = await supabase
@@ -67,9 +67,7 @@ export default function AdminUserManager() {
                     roles ( id, name )
                 `);
 
-            if (aError) {
-                console.error("Error fetching user roles:", aError);
-            }
+            if (aError) console.error("Error fetching user roles:", aError);
 
             // 3. Map roles to users
             const roleMap: Record<string, any[]> = {};
@@ -80,7 +78,9 @@ export default function AdminUserManager() {
 
             const enhancedUsers = profiles?.map(user => ({
                 ...user,
-                user_roles: roleMap[user.id] || []
+                user_roles: roleMap[user.id] || [],
+                // Helper to get primary role ID easily
+                primary_role_id: roleMap[user.id]?.[0]?.roles?.id || ""
             })) || [];
 
             setUsers(enhancedUsers);
@@ -93,7 +93,9 @@ export default function AdminUserManager() {
 
             if (rolesData) {
                 setRoles(rolesData);
-                if (rolesData.length > 0) setFormData(prev => ({ ...prev, role_id: rolesData[0].id }));
+                if (rolesData.length > 0 && modalMode === 'invite') {
+                    setFormData(prev => ({ ...prev, role_id: rolesData[0].id }));
+                }
             }
         } catch (err: any) {
             console.error("Error fetching admin user data:", err);
@@ -103,31 +105,57 @@ export default function AdminUserManager() {
         }
     };
 
-    const handleInvite = async (e: React.FormEvent) => {
+    const handleOpenInvite = () => {
+        setModalMode('invite');
+        setFormData({ email: "", full_name: "", role_id: roles[0]?.id || "", phone: "" });
+        setIsModalOpen(true);
+    };
+
+    const handleOpenEdit = (user: any) => {
+        setModalMode('edit');
+        setSelectedUser(user);
+        setFormData({
+            email: user.email,
+            full_name: user.full_name || "",
+            role_id: user.primary_role_id || roles[0]?.id || "",
+            phone: user.phone || ""
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
 
         try {
-            // Note: In a real production app, we would call a backend API here
-            // to use the Supabase Service Role Key and invite the user via Auth.
-            // For now, we'll explain to the user they need to run this on their backend.
+            if (modalMode === 'invite') {
+                const response = await fetch('/api/auth/invite', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message || "Error al invitar usuario");
+                alert("¡Usuario invitado con éxito!");
+            } else {
+                // Edit Mode
+                const response = await fetch('/api/auth/manage-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'update_profile',
+                        userId: selectedUser.id,
+                        full_name: formData.full_name,
+                        phone: formData.phone,
+                        role_id: formData.role_id
+                    })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message || "Error al actualizar usuario");
+                alert("Usuario actualizado correctamente.");
+            }
 
-            // SIMULATED Invitation logic (requires service role key usually)
-            // If we don't have a backend route, this is just a UI placeholder.
-
-            const response = await fetch('/api/auth/invite', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) throw new Error(result.message || "Error al invitar usuario");
-
-            alert("¡Usuario invitado con éxito! Se envió un correo para configurar la contraseña.");
             setIsModalOpen(false);
-            setFormData({ email: "", full_name: "", role_id: roles[0]?.id || "" });
             fetchData();
         } catch (err: any) {
             alert(err.message);
@@ -136,10 +164,35 @@ export default function AdminUserManager() {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm("¿Estás seguro de eliminar este usuario? Esto no borrará su cuenta de Auth (debe hacerse desde Supabase)")) return;
-        await supabase.from('profiles').delete().eq('id', id);
-        fetchData();
+    const handleToggleStatus = async (user: any) => {
+        const newStatus = !user.is_active;
+        const confirmMsg = newStatus
+            ? `¿Reactivar acceso para ${user.full_name}?`
+            : `¿Desactivar a ${user.full_name}? Esto cerrará todas sus sesiones activas.`;
+
+        if (!confirm(confirmMsg)) return;
+
+        setLoading(true);
+        try {
+            const response = await fetch('/api/auth/manage-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'toggle_access',
+                    userId: user.id,
+                    active: newStatus
+                })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message);
+
+            // Refetch to see changes
+            fetchData();
+        } catch (err: any) {
+            alert("Error: " + err.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleResetPassword = async (email: string) => {
@@ -199,7 +252,7 @@ export default function AdminUserManager() {
                     />
                 </div>
                 <button
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={handleOpenInvite}
                     className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-md active:scale-95"
                 >
                     <UserPlus className="w-5 h-5" /> Invitar Usuario
@@ -214,25 +267,31 @@ export default function AdminUserManager() {
                             <tr>
                                 <th className="px-6 py-4">Usuario</th>
                                 <th className="px-6 py-4">Rol / Acceso</th>
+                                <th className="px-6 py-4">Estado</th>
                                 <th className="px-6 py-4">Registrado el</th>
-                                <th className="px-6 py-4"></th>
+                                <th className="px-6 py-4 text-right">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading && users.length === 0 ? (
-                                <tr><td colSpan={4} className="text-center py-12 text-slate-500">Cargando usuarios...</td></tr>
+                                <tr><td colSpan={5} className="text-center py-12 text-slate-500">Cargando usuarios...</td></tr>
                             ) : filteredUsers.length === 0 ? (
-                                <tr><td colSpan={4} className="text-center py-12 text-slate-400 italic">No se encontraron usuarios que coincidan con la búsqueda.</td></tr>
+                                <tr><td colSpan={5} className="text-center py-12 text-slate-400 italic">No se encontraron usuarios que coincidan con la búsqueda.</td></tr>
                             ) : filteredUsers.map(user => (
-                                <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+                                <tr key={user.id} className={`hover:bg-slate-50/50 transition-colors ${!user.is_active ? 'bg-slate-50/80 grayscale-[0.5]' : ''}`}>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 font-bold overflow-hidden">
+                                            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 font-bold overflow-hidden relative">
                                                 {user.full_name?.[0] || user.email?.[0]?.toUpperCase() || "?"}
+                                                {/* Status Indicator overlapping avatar */}
+                                                <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${user.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`}></div>
                                             </div>
                                             <div>
                                                 <p className="font-semibold text-slate-800">{user.full_name || "Sin nombre"}</p>
-                                                <p className="text-xs text-slate-500">{user.email || "Sin email"}</p>
+                                                <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                    <span>{user.email}</span>
+                                                    {user.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {user.phone}</span>}
+                                                </div>
                                             </div>
                                         </div>
                                     </td>
@@ -248,24 +307,49 @@ export default function AdminUserManager() {
                                             )}
                                         </div>
                                     </td>
+                                    <td className="px-6 py-4">
+                                        {user.is_active !== false ? (
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                                                Activo
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+                                                <Ban className="w-3 h-3" />
+                                                Inactivo
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4 text-slate-500">
                                         {new Date(user.created_at).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2">
                                             <button
+                                                onClick={() => handleOpenEdit(user)}
+                                                title="Editar Datos y Rol"
+                                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                                <Edit2 className="w-5 h-5" />
+                                            </button>
+
+                                            <button
+                                                onClick={() => handleToggleStatus(user)}
+                                                title={user.is_active !== false ? "Desactivar Usuario" : "Activar Usuario"}
+                                                className={`p-2 rounded-lg transition-colors ${user.is_active !== false
+                                                        ? 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                                                        : 'text-red-500 bg-red-50 hover:bg-green-50 hover:text-green-600'
+                                                    }`}
+                                            >
+                                                {user.is_active !== false ? <Ban className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+                                            </button>
+
+                                            <button
                                                 onClick={() => handleResetPassword(user.email)}
                                                 title="Restablecer Contraseña"
                                                 className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                                             >
                                                 <Key className="w-5 h-5" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(user.id)}
-                                                title="Eliminar Perfil"
-                                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                            >
-                                                <Trash2 className="w-5 h-5" />
                                             </button>
                                         </div>
                                     </td>
@@ -276,8 +360,12 @@ export default function AdminUserManager() {
                 </div>
             </div>
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Invitar Nuevo Usuario">
-                <form onSubmit={handleInvite} className="space-y-4">
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                title={modalMode === 'invite' ? "Invitar Nuevo Usuario" : "Editar Usuario"}
+            >
+                <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre Completo</label>
                         <input
@@ -294,14 +382,26 @@ export default function AdminUserManager() {
                         <input
                             type="email"
                             required
-                            className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                            disabled={modalMode === 'edit'}
+                            className={`w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all ${modalMode === 'edit' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
                             value={formData.email}
                             onChange={e => setFormData({ ...formData, email: e.target.value })}
                             placeholder="usuario@ejemplo.com"
                         />
+                        {modalMode === 'edit' && <p className="text-[10px] text-slate-400 mt-1">El correo no se puede editar.</p>}
                     </div>
                     <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1">Asignar Rol Inicial</label>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Teléfono</label>
+                        <input
+                            type="tel"
+                            className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                            value={formData.phone}
+                            onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                            placeholder="+54 9 11 ..."
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Rol de Usuario</label>
                         <select
                             required
                             className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
@@ -312,15 +412,12 @@ export default function AdminUserManager() {
                                 <option key={r.id} value={r.id}>{r.name}</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-slate-400 mt-2 px-1">
-                            El usuario recibirá un correo para configurar su contraseña y activar su cuenta.
-                        </p>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                         <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-500 font-medium">Cancelar</button>
                         <button type="submit" disabled={loading} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold shadow-md hover:bg-blue-700 transition-all">
-                            {loading ? "Enviando..." : "Enviar Invitación"}
+                            {loading ? "Guardando..." : (modalMode === 'invite' ? "Enviar Invitación" : "Guardar Cambios")}
                         </button>
                     </div>
                 </form>

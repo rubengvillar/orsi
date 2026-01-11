@@ -47,6 +47,10 @@ export const PERMISSIONS = {
 
     INVENTORY_TOOLS_VIEW: 'inventory:tools:view',
     INVENTORY_TOOLS_WRITE: 'inventory:tools:write',
+
+    ORDERS_ATTACHMENTS_VIEW: 'orders:attachments:view',
+    ORDERS_ATTACHMENTS_UPLOAD: 'orders:attachments:upload',
+    ORDERS_ATTACHMENTS_DELETE: 'orders:attachments:delete',
 };
 
 export const PATH_PERMISSIONS: Record<string, string> = {
