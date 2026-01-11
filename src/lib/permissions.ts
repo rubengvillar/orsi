@@ -51,6 +51,9 @@ export const PERMISSIONS = {
     ORDERS_ATTACHMENTS_VIEW: 'orders:attachments:view',
     ORDERS_ATTACHMENTS_UPLOAD: 'orders:attachments:upload',
     ORDERS_ATTACHMENTS_DELETE: 'orders:attachments:delete',
+
+    ORDERS_MATERIAL_EDIT: 'orders:material:edit',
+    ORDERS_MATERIAL_DELETE: 'orders:material:delete',
 };
 
 export const PATH_PERMISSIONS: Record<string, string> = {

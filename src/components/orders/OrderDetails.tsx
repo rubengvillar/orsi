@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Clock, User, Package, Calendar, Edit2, Save, X, Scissors } from "lucide-react";
+import { Clock, User, Package, Calendar, Edit2, Save, X, Scissors, Trash2, AlertTriangle } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import MaterialUsageForm from "./MaterialUsageForm";
 import OrderCutsList from "./OrderCutsList";
 import OrderAttachments from "./OrderAttachments";
+import { useStore } from '@nanostores/react';
+import { userPermissions, userRole } from '../../stores/authStore';
+import { PERMISSIONS } from '../../lib/permissions';
 
 interface OrderDetailsProps {
     orderId: string;
@@ -15,6 +18,20 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
     const [loading, setLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
     const [allOperators, setAllOperators] = useState<any[]>([]);
+
+    // Permissions
+    const perms = useStore(userPermissions);
+    const role = useStore(userRole);
+    const canEditUsage = role === 'Admin' || role === 'Administrador' || perms.includes(PERMISSIONS.ORDERS_MATERIAL_EDIT);
+    const canDeleteUsage = role === 'Admin' || role === 'Administrador' || perms.includes(PERMISSIONS.ORDERS_MATERIAL_DELETE);
+
+    // Usage Editing State
+    const [editingUsageId, setEditingUsageId] = useState<string | null>(null);
+    const [editUsageData, setEditUsageData] = useState({
+        quantity: 0,
+        operator_id: ""
+    });
+
     const [editFormData, setEditFormData] = useState({
         client_name: "",
         legacy_order_number: "",
@@ -173,6 +190,79 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
         if (error) alert(error.message);
         else setOrder({ ...order, ...updates });
         setLoading(false);
+    };
+
+    const handleEditUsageClick = (record: any) => {
+        setEditingUsageId(record.id);
+        setEditUsageData({
+            quantity: record.quantity,
+            operator_id: record.operator_id || ""
+        });
+    };
+
+    const handleCancelUsageEdit = () => {
+        setEditingUsageId(null);
+        setEditUsageData({ quantity: 0, operator_id: "" });
+    };
+
+    const handleSaveUsageEdit = async (record: any) => {
+        if (editUsageData.quantity <= 0) {
+            alert("Quantity must be positive");
+            return;
+        }
+
+        try {
+            setLoading(true);
+
+            // 1. Update Quantity if changed
+            if (editUsageData.quantity !== record.quantity) {
+                const { error: qtyError } = await supabase.rpc('update_material_usage_quantity', {
+                    p_usage_id: record.id,
+                    p_new_quantity: editUsageData.quantity
+                });
+                if (qtyError) throw qtyError;
+            }
+
+            // 2. Update Details (Operator)
+            if (editUsageData.operator_id !== record.operator_id) {
+                const { error: detError } = await supabase.rpc('update_material_usage_details', {
+                    p_usage_id: record.id,
+                    p_operator_id: editUsageData.operator_id || null
+                });
+                if (detError) throw detError;
+            }
+
+            alert("Material updated successfully");
+            setEditingUsageId(null);
+            fetchUsage();
+        } catch (err: any) {
+            console.error(err);
+            alert("Error updating material: " + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteUsage = async (record: any) => {
+        if (!window.confirm(`Are you sure you want to delete this usage record?\n\n${record.material_name}\nQuantity: ${record.quantity}\n\nThis will return the items to STOCK.`)) {
+            return;
+        }
+
+        try {
+            setLoading(true);
+            const { error } = await supabase.rpc('delete_material_usage', {
+                p_usage_id: record.id
+            });
+
+            if (error) throw error;
+
+            fetchUsage();
+        } catch (err: any) {
+            console.error(err);
+            alert("Error deleting usage: " + err.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const fetchUsage = async () => {
@@ -538,6 +628,7 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
                                     <th className="px-4 py-3">Entregado a</th>
                                     <th className="px-4 py-3">Material</th>
                                     <th className="px-4 py-3">Cant.</th>
+                                    {(canEditUsage || canDeleteUsage) && <th className="px-4 py-3 text-right">Acciones</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -551,7 +642,20 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
                                             {record.worker?.full_name || record.worker?.email || "Unknown"}
                                         </td>
                                         <td className="px-4 py-3 font-medium text-blue-600">
-                                            {record.delivered_to?.full_name || <span className="text-slate-400 italic font-normal">No especificado</span>}
+                                            {editingUsageId === record.id ? (
+                                                <select
+                                                    className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
+                                                    value={editUsageData.operator_id}
+                                                    onChange={(e) => setEditUsageData({ ...editUsageData, operator_id: e.target.value })}
+                                                >
+                                                    <option value="">No especificado</option>
+                                                    {allOperators.map(op => (
+                                                        <option key={op.id} value={op.id}>{op.full_name}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                record.delivered_to?.full_name || <span className="text-slate-400 italic font-normal">No especificado</span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-slate-600">
                                             <div className="flex flex-col">
@@ -561,8 +665,64 @@ export default function OrderDetails({ orderId }: OrderDetailsProps) {
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 font-bold text-slate-700">
-                                            {record.quantity}
+                                            {editingUsageId === record.id ? (
+                                                <input
+                                                    type="number"
+                                                    min="0.1"
+                                                    step="0.1"
+                                                    className="w-20 px-2 py-1 border border-slate-300 rounded text-xs"
+                                                    value={editUsageData.quantity}
+                                                    onChange={(e) => setEditUsageData({ ...editUsageData, quantity: parseFloat(e.target.value) })}
+                                                />
+                                            ) : (
+                                                record.quantity
+                                            )}
                                         </td>
+                                        {(canEditUsage || canDeleteUsage) && (
+                                            <td className="px-4 py-3 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    {editingUsageId === record.id ? (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleSaveUsageEdit(record)}
+                                                                className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                                                title="Guardar"
+                                                            >
+                                                                <Save className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={handleCancelUsageEdit}
+                                                                className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                                                                title="Cancelar"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            {canEditUsage && (
+                                                                <button
+                                                                    onClick={() => handleEditUsageClick(record)}
+                                                                    className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                                                    title="Editar"
+                                                                >
+                                                                    <Edit2 className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                            {canDeleteUsage && (
+                                                                <button
+                                                                    onClick={() => handleDeleteUsage(record)}
+                                                                    className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                                                    title="Eliminar (Devolver a Stock)"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                                 {usage.length === 0 && (
