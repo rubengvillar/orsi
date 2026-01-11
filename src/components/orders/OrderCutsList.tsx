@@ -9,11 +9,18 @@ interface OrderCutsListProps {
 
 export default function OrderCutsList({ orderId }: OrderCutsListProps) {
     const [cuts, setCuts] = useState<any[]>([]);
-    const [glassTypes, setGlassTypes] = useState<any[]>([]);
+    const [glassTypes, setGlassTypes] = useState<any[]>([]); // Missing
+    const [glassAccessories, setGlassAccessories] = useState<any[]>([]); // New
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // Updated Form State
     const [formData, setFormData] = useState({
+        cut_type: 'simple', // simple | dvh
         glass_type_id: "",
+        dvh_outer_glass_id: "",
+        dvh_inner_glass_id: "",
+        dvh_chamber_id: "",
         width_mm: "",
         height_mm: "",
         quantity: "1",
@@ -27,9 +34,14 @@ export default function OrderCutsList({ orderId }: OrderCutsListProps) {
     const fetchData = async () => {
         setLoading(true);
         // 1. Fetch glass types for the dropdown
+        // 1. Fetch glass types & accessories
         const { data: types } = await supabase.from('glass_types').select('*').order('code');
         setGlassTypes(types || []);
 
+        const { data: acc } = await supabase.from('glass_accessories').select('*').order('code');
+        setGlassAccessories(acc || []);
+
+        // Pre-selection if needed logic...
         if (types && types.length > 0 && !formData.glass_type_id) {
             setFormData(prev => ({ ...prev, glass_type_id: types[0].id }));
         }
@@ -50,7 +62,11 @@ export default function OrderCutsList({ orderId }: OrderCutsListProps) {
         setLoading(true);
         const { error } = await supabase.from("order_cuts").insert({
             order_id: orderId,
-            glass_type_id: formData.glass_type_id,
+            cut_type: formData.cut_type,
+            glass_type_id: formData.cut_type === 'simple' ? formData.glass_type_id : null,
+            dvh_outer_glass_id: formData.cut_type === 'dvh' ? formData.dvh_outer_glass_id : null,
+            dvh_inner_glass_id: formData.cut_type === 'dvh' ? formData.dvh_inner_glass_id : null,
+            dvh_chamber_id: formData.cut_type === 'dvh' ? formData.dvh_chamber_id : null,
             width_mm: parseInt(formData.width_mm),
             height_mm: parseInt(formData.height_mm),
             quantity: parseInt(formData.quantity),
@@ -116,8 +132,21 @@ export default function OrderCutsList({ orderId }: OrderCutsListProps) {
                         ) : cuts.map((cut) => (
                             <tr key={cut.id} className="hover:bg-slate-50">
                                 <td className="px-4 py-3">
-                                    <div className="font-medium text-slate-800">{cut.glass_types?.code}</div>
-                                    <div className="text-xs text-slate-400">{cut.glass_types?.thickness_mm}mm {cut.glass_types?.color}</div>
+                                    {cut.cut_type === 'dvh' ? (
+                                        <div>
+                                            <div className="font-bold text-slate-800 text-xs uppercase bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded inline-block mb-1">DVH</div>
+                                            <div className="text-xs space-y-0.5">
+                                                <div><span className="font-semibold text-slate-500">Ext:</span> {glassTypes.find(g => g.id === cut.dvh_outer_glass_id)?.code}</div>
+                                                <div><span className="font-semibold text-slate-500">Cam:</span> {glassAccessories.find(a => a.id === cut.dvh_chamber_id)?.description}</div>
+                                                <div><span className="font-semibold text-slate-500">Int:</span> {glassTypes.find(g => g.id === cut.dvh_inner_glass_id)?.code}</div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="font-medium text-slate-800">{cut.glass_types?.code}</div>
+                                            <div className="text-xs text-slate-400">{cut.glass_types?.thickness_mm}mm {cut.glass_types?.color}</div>
+                                        </>
+                                    )}
                                 </td>
                                 <td className="px-4 py-3 text-slate-600 font-mono">
                                     {cut.width_mm} x {cut.height_mm}
@@ -176,19 +205,91 @@ export default function OrderCutsList({ orderId }: OrderCutsListProps) {
 
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Agregar Requerimiento de Corte">
                 <form onSubmit={handleAddCut} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Vidrio</label>
-                        <select
-                            required
-                            className="w-full px-3 py-2 border rounded-lg"
-                            value={formData.glass_type_id}
-                            onChange={e => setFormData({ ...formData, glass_type_id: e.target.value })}
-                        >
-                            {glassTypes.map(t => (
-                                <option key={t.id} value={t.id}>{t.code} - {t.thickness_mm}mm {t.color}</option>
-                            ))}
-                        </select>
+                    {/* Cut Type Selection */}
+                    <div className="flex gap-4 border-b border-slate-200 pb-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="radio"
+                                name="modal_cut_type"
+                                checked={formData.cut_type === 'simple'}
+                                onChange={() => setFormData({ ...formData, cut_type: 'simple' })}
+                                className="text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-slate-700">Simple</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="radio"
+                                name="modal_cut_type"
+                                checked={formData.cut_type === 'dvh'}
+                                onChange={() => setFormData({ ...formData, cut_type: 'dvh' })}
+                                className="text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-slate-700">DVH (Doble Vidrio)</span>
+                        </label>
                     </div>
+
+                    {formData.cut_type === 'simple' ? (
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Vidrio</label>
+                            <select
+                                required
+                                className="w-full px-3 py-2 border rounded-lg"
+                                value={formData.glass_type_id}
+                                onChange={e => setFormData({ ...formData, glass_type_id: e.target.value })}
+                            >
+                                <option value="">- Seleccionar -</option>
+                                {glassTypes.map(t => (
+                                    <option key={t.id} value={t.id}>{t.code} - {t.thickness_mm}mm {t.color}</option>
+                                ))}
+                            </select>
+                        </div>
+                    ) : (
+                        <div className="space-y-3 bg-slate-50 p-3 rounded border">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Vidrio Exterior</label>
+                                <select
+                                    required
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    value={formData.dvh_outer_glass_id}
+                                    onChange={e => setFormData({ ...formData, dvh_outer_glass_id: e.target.value })}
+                                >
+                                    <option value="">- Ext -</option>
+                                    {glassTypes.map(t => (
+                                        <option key={t.id} value={t.id}>{t.code} - {t.thickness_mm}mm {t.color}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Vidrio Interior</label>
+                                <select
+                                    required
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    value={formData.dvh_inner_glass_id}
+                                    onChange={e => setFormData({ ...formData, dvh_inner_glass_id: e.target.value })}
+                                >
+                                    <option value="">- Int -</option>
+                                    {glassTypes.map(t => (
+                                        <option key={t.id} value={t.id}>{t.code} - {t.thickness_mm}mm {t.color}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Cámara</label>
+                                <select
+                                    required
+                                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    value={formData.dvh_chamber_id}
+                                    onChange={e => setFormData({ ...formData, dvh_chamber_id: e.target.value })}
+                                >
+                                    <option value="">- Cámara -</option>
+                                    {glassAccessories.map(a => (
+                                        <option key={a.id} value={a.id}>{a.description} ({a.code})</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Ancho (mm)</label>

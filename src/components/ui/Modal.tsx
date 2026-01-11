@@ -6,9 +6,10 @@ interface ModalProps {
     onClose: () => void;
     title: string;
     children: React.ReactNode;
+    size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | 'full';
 }
 
-export function Modal({ isOpen, onClose, title, children }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, size = 'lg' }: ModalProps) {
     const modalRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -27,11 +28,23 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
 
     if (!isOpen) return null;
 
+    const sizeClasses = {
+        sm: 'max-w-sm',
+        md: 'max-w-md',
+        lg: 'max-w-lg',
+        xl: 'max-w-xl',
+        '2xl': 'max-w-2xl',
+        '3xl': 'max-w-3xl',
+        '4xl': 'max-w-4xl',
+        '5xl': 'max-w-5xl',
+        full: 'max-w-full mx-4'
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
             <div
                 ref={modalRef}
-                className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
+                className={`bg-white rounded-xl shadow-2xl w-full ${sizeClasses[size]} max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200`}
             >
                 <div className="flex items-center justify-between p-6 border-b border-slate-100">
                     <h3 className="text-xl font-semibold text-slate-800">{title}</h3>

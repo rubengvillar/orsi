@@ -41,6 +41,15 @@ export interface AluminumProfile {
     created_at: string;
 }
 
+export interface AluminumRemnant {
+    id: string;
+    aluminum_profile_id: string;
+    length_mm: number;
+    quantity: number;
+    location: string | null;
+    created_at: string;
+}
+
 export interface GlassType {
     id: string;
     code: string;
@@ -142,6 +151,8 @@ export interface RouteMaterial {
     tool_id: string | null;
     aluminum_accessory_id: string | null;
     glass_accessory_id: string | null;
+    aluminum_profile_id: string | null;
+    aluminum_remnant_id: string | null;
 
     // Logic
     is_returnable: boolean;
@@ -212,6 +223,7 @@ export interface Database {
             glass_types: { Row: GlassType; Insert: Omit<GlassType, 'id'>; Update: Partial<GlassType> };
             glass_sheets: { Row: GlassSheet; Insert: Omit<GlassSheet, 'id'>; Update: Partial<GlassSheet> };
             glass_remnants: { Row: GlassRemnant; Insert: Omit<GlassRemnant, 'id'>; Update: Partial<GlassRemnant> };
+            aluminum_remnants: { Row: AluminumRemnant; Insert: Omit<AluminumRemnant, 'id'>; Update: Partial<AluminumRemnant> };
             glass_accessories: { Row: GlassAccessory; Insert: Omit<GlassAccessory, 'id'>; Update: Partial<GlassAccessory> };
 
             vehicles: { Row: Vehicle; Insert: Omit<Vehicle, 'id'>; Update: Partial<Vehicle> };
@@ -223,6 +235,44 @@ export interface Database {
             toolboxes: { Row: Toolbox; Insert: Omit<Toolbox, 'id'>; Update: Partial<Toolbox> };
             toolbox_items: { Row: ToolboxItem; Insert: Omit<ToolboxItem, 'id'>; Update: Partial<ToolboxItem> };
             tool_losses: { Row: ToolLoss; Insert: Omit<ToolLoss, 'id'>; Update: Partial<ToolLoss> };
+
+            // Orders
+            orders: { Row: Order; Insert: Omit<Order, 'id'>; Update: Partial<Order> };
+            order_cuts: { Row: OrderCut; Insert: Omit<OrderCut, 'id'>; Update: Partial<OrderCut> };
         };
     };
 };
+
+export interface Order {
+    id: string;
+    order_number: number;
+    legacy_order_number: string | null;
+    client_name: string;
+    description: string;
+    address: string | null;
+    status: 'Pending' | 'Ready for Cutting' | 'Cut' | 'In Progress' | 'Installed' | 'Completed' | 'Cancelled';
+    manufactured_at: string | null;
+    installed_at: string | null;
+    created_at: string;
+    total_cuts?: number;
+    total_area_m2?: number;
+    priority?: boolean;
+    estimated_installation_time: string | null;
+}
+
+export interface OrderCut {
+    id: string;
+    order_id: string;
+    glass_type_id: string | null;
+    cut_type: 'simple' | 'dvh';
+    dvh_outer_glass_id: string | null;
+    dvh_inner_glass_id: string | null;
+    dvh_chamber_id: string | null;
+    width_mm: number;
+    height_mm: number;
+    quantity: number;
+    notes: string | null;
+    status: 'pending' | 'cut';
+    created_at: string;
+    glass_types?: GlassType; // Joined
+}

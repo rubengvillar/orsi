@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import type { Route, RouteStop, Vehicle, RouteMaterial } from '../../types/database';
+import type { Route, RouteStop, Vehicle, RouteMaterial, AluminumAccessory, GlassAccessory, AluminumProfile, Tool, AluminumRemnant } from '../../types/database';
 import { Modal } from '../ui/Modal';
 import { Truck, Plus, Calendar, Clock, MapPin, Users, Printer, FileText, Trash2, X, ChevronRight, CheckCircle, Package, User, Camera, PenTool, ClipboardList } from 'lucide-react';
 import ProofOfDelivery from './ProofOfDelivery';
@@ -14,19 +14,30 @@ export default function RouteManager() {
     const [pendingOrders, setPendingOrders] = useState<any[]>([]);
     const [materialsMap, setMaterialsMap] = useState<Map<string, string>>(new Map());
 
+    // Returns State
+    const [isReturnsModalOpen, setIsReturnsModalOpen] = useState(false);
+    const [pendingReturns, setPendingReturns] = useState<any[]>([]);
+
     // Editor State
     const [editingRoute, setEditingRoute] = useState<any | null>(null);
     const [routeDate, setRouteDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedVehicle, setSelectedVehicle] = useState('');
     const [selectedInstallers, setSelectedInstallers] = useState<string[]>([]);
     const [routeStops, setRouteStops] = useState<any[]>([]);
-    const [routeMaterials, setRouteMaterials] = useState<RouteMaterial[]>([]); // New: General Materials
+    // Extended type for local state to track selection type
+    type RouteMaterialWithState = RouteMaterial & { type?: string };
+    const [routeMaterials, setRouteMaterials] = useState<RouteMaterialWithState[]>([]); // New: General Materials
     const [notes, setNotes] = useState('');
 
     // Execution State
     const [podStop, setPodStop] = useState<any | null>(null); // Stop being 'completed'
 
     const [availableTools, setAvailableTools] = useState<any[]>([]);
+    const [availableAluminumAccessories, setAvailableAluminumAccessories] = useState<AluminumAccessory[]>([]);
+    const [availableGlassAccessories, setAvailableGlassAccessories] = useState<GlassAccessory[]>([]);
+    const [availableAluminumProfiles, setAvailableAluminumProfiles] = useState<AluminumProfile[]>([]);
+    const [availableAluminumRemnants, setAvailableAluminumRemnants] = useState<AluminumRemnant[]>([]);
+
 
     useEffect(() => {
         fetchRoutes();
@@ -38,9 +49,9 @@ export default function RouteManager() {
         const { data } = await supabase
             .from('routes')
             .select(`
-                *,
-                vehicle:vehicle_id(brand, model, license_plate),
-                stops:route_stops(count)
+    *,
+    vehicle: vehicle_id(brand, model, license_plate),
+        stops: route_stops(count)
             `)
             .order('date', { ascending: false });
         setRoutes(data || []);
@@ -56,6 +67,20 @@ export default function RouteManager() {
 
         const { data: tData } = await supabase.from('tools').select('*').eq('is_active', true);
         setAvailableTools(tData || []);
+
+        const { data: aaData } = await supabase.from('aluminum_accessories').select('*');
+        setAvailableAluminumAccessories(aaData || []);
+
+        const { data: gaData } = await supabase.from('glass_accessories').select('*');
+        setAvailableGlassAccessories(gaData || []);
+
+        const { data: apData } = await supabase.from('aluminum_profiles').select('*');
+        setAvailableAluminumProfiles(apData || []);
+
+        const { data: arData } = await supabase.from('aluminum_remnants').select('*').gt('quantity', 0);
+        setAvailableAluminumRemnants(arData || []);
+
+
     };
 
     const fetchPendingOrders = async () => {
@@ -66,6 +91,41 @@ export default function RouteManager() {
             .order('created_at', { ascending: true });
 
         setPendingOrders(data || []);
+    };
+
+    const fetchPendingReturns = async () => {
+        // Fetch items that are returnable AND not yet returned
+        const { data } = await supabase
+            .from('route_materials')
+            .select(`
+                *,
+                route:route_id(date, vehicle:vehicle_id(license_plate)),
+                receiver:receiver_operator_id(full_name)
+            `)
+            .eq('is_returnable', true)
+            .is('returned_at', null)
+            .order('created_at', { ascending: false });
+
+        setPendingReturns(data || []);
+    };
+
+    const handleReturnMaterial = async (id: string, operatorId: string | null) => {
+        try {
+            const { error } = await supabase
+                .from('route_materials')
+                .update({
+                    returned_at: new Date().toISOString(),
+                    returned_by_id: operatorId // Optionally track who received it
+                    // The trigger will handle stock increment
+                })
+                .eq('id', id);
+
+            if (error) throw error;
+            fetchPendingReturns(); // Refresh list
+            fetchResources(); // Refresh stock counts
+        } catch (err: any) {
+            alert('Error processing return: ' + err.message);
+        }
     };
 
     // Helper
@@ -116,7 +176,17 @@ export default function RouteManager() {
                 .from('route_materials')
                 .select('*')
                 .eq('route_id', route.id);
-            setRouteMaterials(routeMats || []);
+            // Determine initial type for each material
+            const matsWithState = (routeMats || []).map((m: any) => {
+                let type = 'manual';
+                if (m.tool_id) type = 'tool';
+                else if (m.aluminum_accessory_id) type = 'aluminum_accessory';
+                else if (m.glass_accessory_id) type = 'glass_accessory';
+                else if (m.aluminum_profile_id || m.aluminum_remnant_id) type = 'aluminum_profile';
+
+                return { ...m, type };
+            });
+            setRouteMaterials(matsWithState);
 
         } else {
             setEditingRoute(null);
@@ -159,7 +229,7 @@ export default function RouteManager() {
     };
 
     const handleAddRouteMaterial = () => {
-        setRouteMaterials([...routeMaterials, {
+        setRouteMaterials(prev => [...prev, {
             id: 'temp-mat-' + Date.now(),
             route_id: '',
             description: '',
@@ -170,16 +240,19 @@ export default function RouteManager() {
             tool_id: null,
             aluminum_accessory_id: null,
             glass_accessory_id: null,
+            aluminum_profile_id: null,
+            aluminum_remnant_id: null,
             is_returnable: false,
             returned_at: null,
             returned_by_id: null,
 
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            type: 'manual'
         }]);
     };
 
     const handleUpdateRouteMaterial = (id: string, field: keyof RouteMaterial, value: any) => {
-        setRouteMaterials(routeMaterials.map(m => m.id === id ? { ...m, [field]: value } : m));
+        setRouteMaterials(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
     };
 
     const handleRemoveRouteMaterial = (id: string) => {
@@ -238,6 +311,10 @@ export default function RouteManager() {
                     order_id: m.order_id || null,
                     receiver_operator_id: m.receiver_operator_id || null,
                     tool_id: m.tool_id || null,
+                    aluminum_accessory_id: m.aluminum_accessory_id || null,
+                    glass_accessory_id: m.glass_accessory_id || null,
+                    aluminum_profile_id: m.aluminum_profile_id || null,
+                    aluminum_remnant_id: m.aluminum_remnant_id || null,
                     is_returnable: m.is_returnable || false
                 }));
                 const { error } = await supabase.from('route_materials').insert(matsPayload);
@@ -294,13 +371,26 @@ export default function RouteManager() {
                     <Truck className="w-6 h-6 text-slate-600" />
                     Hojas de Ruta
                 </h2>
-                <button
-                    onClick={() => handleOpenModal()}
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                    <Plus className="w-4 h-4" />
-                    Nueva Hoja de Ruta
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => {
+                            // Open Returns Modal
+                            setIsReturnsModalOpen(true);
+                            fetchPendingReturns();
+                        }}
+                        className="flex items-center gap-2 bg-amber-100 text-amber-700 px-4 py-2 rounded-lg hover:bg-amber-200 transition-colors"
+                    >
+                        <ClipboardList className="w-4 h-4" />
+                        Devoluciones Pendientes
+                    </button>
+                    <button
+                        onClick={() => handleOpenModal()}
+                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Nueva Hoja de Ruta
+                    </button>
+                </div>
             </div>
 
             {/* List of Routes */}
@@ -433,28 +523,168 @@ export default function RouteManager() {
                                                     className="w-16 border rounded px-2 py-1"
                                                 />
 
-                                                {/* Tool Selection */}
+                                                {/* Type Selection */}
                                                 <select
-                                                    value={mat.tool_id || ''}
+                                                    value={mat.type || 'manual'}
                                                     onChange={e => {
-                                                        const val = e.target.value;
-                                                        if (val) {
-                                                            const tool = availableTools.find(t => t.id === val);
-                                                            // Auto-fill description if tool selected and description is empty or matches previous
-                                                            handleUpdateRouteMaterial(mat.id, 'tool_id', val);
-                                                            handleUpdateRouteMaterial(mat.id, 'description', tool ? tool.name : '');
-                                                            handleUpdateRouteMaterial(mat.id, 'is_returnable', true);
-                                                        } else {
-                                                            handleUpdateRouteMaterial(mat.id, 'tool_id', null);
-                                                        }
+                                                        const newType = e.target.value;
+                                                        setRouteMaterials(prev => prev.map(m => {
+                                                            if (m.id !== mat.id) return m;
+                                                            return {
+                                                                ...m,
+                                                                type: newType,
+                                                                // Clear IDs when changing type to avoid ambiguity
+                                                                tool_id: null,
+                                                                aluminum_accessory_id: null,
+                                                                glass_accessory_id: null,
+                                                                aluminum_profile_id: null,
+                                                                aluminum_remnant_id: null,
+                                                                // Clear description if switching away from manual, or let user type it?
+                                                                // If switching TO manual, keep it. If switching FROM manual to something else, clear it to let the item fill it.
+                                                                description: newType === 'manual' ? m.description : ''
+                                                            };
+                                                        }));
                                                     }}
-                                                    className="w-40 border rounded px-2 py-1 text-xs"
+                                                    className="w-32 border rounded px-2 py-1 text-xs"
                                                 >
-                                                    <option value="">(Manual / Texto)</option>
-                                                    {availableTools.filter(t => t.quantity_available > 0 || mat.tool_id === t.id).map(t => (
-                                                        <option key={t.id} value={t.id}>{t.name} (Disp: {t.quantity_available})</option>
-                                                    ))}
+                                                    <option value="manual">Manual / Texto</option>
+                                                    <option value="tool">Herramienta</option>
+                                                    <option value="aluminum_accessory">Acc. Aluminio</option>
+                                                    <option value="glass_accessory">Insumo Vidrio</option>
+                                                    <option value="aluminum_profile">Perfil Aluminio</option>
                                                 </select>
+
+                                                {/* Render Specific Selectors based on Type */}
+                                                {/* TOOL */}
+                                                {(() => {
+                                                    const type = mat.type || 'manual';
+
+                                                    if (type === 'manual') return null;
+
+                                                    if (type === 'tool') return (
+                                                        <select
+                                                            value={mat.tool_id || ''}
+                                                            onChange={e => {
+                                                                const val = e.target.value;
+                                                                const item = availableTools.find(t => t.id === val);
+                                                                setRouteMaterials(prev => prev.map(m =>
+                                                                    m.id === mat.id ? { ...m, tool_id: val, description: item ? item.name : '', is_returnable: true } : m
+                                                                ));
+                                                            }}
+                                                            className="w-40 border rounded px-2 py-1 text-xs"
+                                                        >
+                                                            <option value="">- Seleccionar -</option>
+                                                            {availableTools.filter(t => t.quantity_available > 0 || mat.tool_id === t.id).map(t => (
+                                                                <option key={t.id} value={t.id}>{t.name} (Disp: {t.quantity_available})</option>
+                                                            ))}
+                                                        </select>
+                                                    );
+
+                                                    if (type === 'aluminum_accessory') return (
+                                                        <select
+                                                            value={mat.aluminum_accessory_id || ''}
+                                                            onChange={e => {
+                                                                const val = e.target.value;
+                                                                const item = availableAluminumAccessories.find(t => t.id === val);
+                                                                setRouteMaterials(prev => prev.map(m =>
+                                                                    m.id === mat.id ? { ...m, aluminum_accessory_id: val, description: item ? `${item.code} - ${item.description} ` : '', is_returnable: false } : m
+                                                                ));
+                                                            }}
+                                                            className="w-40 border rounded px-2 py-1 text-xs"
+                                                        >
+                                                            <option value="">- Seleccionar -</option>
+                                                            {availableAluminumAccessories.map(t => (
+                                                                <option key={t.id} value={t.id}>{t.code} ({t.quantity})</option>
+                                                            ))}
+                                                        </select>
+                                                    );
+
+                                                    if (type === 'glass_accessory') return (
+                                                        <select
+                                                            value={mat.glass_accessory_id || ''}
+                                                            onChange={e => {
+                                                                const val = e.target.value;
+                                                                const item = availableGlassAccessories.find(t => t.id === val);
+                                                                setRouteMaterials(prev => prev.map(m =>
+                                                                    m.id === mat.id ? { ...m, glass_accessory_id: val, description: item ? `${item.code} - ${item.description} ` : '', is_returnable: false } : m
+                                                                ));
+                                                            }}
+                                                            className="w-40 border rounded px-2 py-1 text-xs"
+                                                        >
+                                                            <option value="">- Seleccionar -</option>
+                                                            {availableGlassAccessories.map(t => (
+                                                                <option key={t.id} value={t.id}>{t.code} ({t.quantity})</option>
+                                                            ))}
+                                                        </select>
+                                                    );
+
+                                                    if (type === 'aluminum_profile') return (
+                                                        <div className="flex gap-1">
+                                                            <select
+                                                                value={mat.aluminum_profile_id || ''}
+                                                                onChange={e => {
+                                                                    const val = e.target.value;
+                                                                    const item = availableAluminumProfiles.find(t => t.id === val);
+                                                                    setRouteMaterials(prev => prev.map(m =>
+                                                                        m.id === mat.id ? {
+                                                                            ...m,
+                                                                            aluminum_profile_id: val,
+                                                                            aluminum_remnant_id: null, // Reset remnant
+                                                                            description: item ? `${item.code} - ${item.description} ` : '',
+                                                                            is_returnable: false
+                                                                        } : m
+                                                                    ));
+                                                                }}
+                                                                className="w-32 border rounded px-2 py-1 text-xs"
+                                                            >
+                                                                <option value="">- Perfil -</option>
+                                                                {availableAluminumProfiles.map(t => {
+                                                                    const remnantCount = availableAluminumRemnants.filter(r => r.aluminum_profile_id === t.id).length;
+                                                                    return (
+                                                                        <option key={t.id} value={t.id}>
+                                                                            {t.code} {remnantCount > 0 ? `(${remnantCount} rezagos)` : ''}
+                                                                        </option>
+                                                                    );
+                                                                })}
+                                                            </select>
+                                                            {mat.aluminum_profile_id && (
+                                                                <select
+                                                                    value={mat.aluminum_remnant_id || 'full'}
+                                                                    onChange={e => {
+                                                                        const val = e.target.value;
+                                                                        const isRemnant = val !== 'full';
+
+                                                                        setRouteMaterials(prev => prev.map(m =>
+                                                                            m.id === mat.id ? {
+                                                                                ...m,
+                                                                                aluminum_remnant_id: isRemnant ? val : null,
+                                                                                // Update description based on selection?
+                                                                                // description: isRemnant ? ... : ...
+                                                                            } : m
+                                                                        ));
+                                                                    }}
+                                                                    className="w-40 border rounded px-2 py-1 text-xs bg-slate-50"
+                                                                >
+                                                                    {(() => {
+                                                                        const profile = availableAluminumProfiles.find(p => p.id === mat.aluminum_profile_id);
+                                                                        const remnants = availableAluminumRemnants.filter(r => r.aluminum_profile_id === mat.aluminum_profile_id);
+
+                                                                        return (
+                                                                            <>
+                                                                                <option value="full">Barra Completa ({profile?.length_mm || 6000}mm)</option>
+                                                                                {remnants.map(r => (
+                                                                                    <option key={r.id} value={r.id}>
+                                                                                        Retazo ({r.length_mm}mm) - {r.location || '?'} (Cant: {r.quantity})
+                                                                                    </option>
+                                                                                ))}
+                                                                            </>
+                                                                        );
+                                                                    })()}
+                                                                </select>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
 
                                                 <input
                                                     type="text"
@@ -476,7 +706,7 @@ export default function RouteManager() {
                                                 <button
                                                     title={mat.is_returnable ? "Devolución Pendiente" : "Consumible"}
                                                     onClick={() => handleUpdateRouteMaterial(mat.id, 'is_returnable', !mat.is_returnable)}
-                                                    className={`p-1 rounded ${mat.is_returnable ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'}`}
+                                                    className={`p - 1 rounded ${mat.is_returnable ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'} `}
                                                 >
                                                     <ClipboardList className="w-4 h-4" />
                                                 </button>
@@ -505,10 +735,10 @@ export default function RouteManager() {
                                                 <div className="flex gap-2">
                                                     <button
                                                         onClick={() => setPodStop(stop)}
-                                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${stop.signature_data
+                                                        className={`flex items - center gap - 1 px - 3 py - 1.5 rounded - lg text - xs font - bold transition - colors ${stop.signature_data
                                                             ? 'bg-green-100 text-green-700 border border-green-200'
                                                             : 'bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700'
-                                                            }`}
+                                                            } `}
                                                     >
                                                         {stop.signature_data ? <CheckCircle className="w-3 h-3" /> : <PenTool className="w-3 h-3" />}
                                                         {stop.signature_data ? 'Firmado' : 'Firmar / Fotos'}
@@ -754,8 +984,8 @@ export default function RouteManager() {
                                                 </div>
                                                 <div className="text-xs text-slate-500 mt-1">{order.address}</div>
                                                 <div className="mt-2 flex gap-2">
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${order.status === 'Cut' ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'bg-slate-50 border-slate-100 text-slate-500'
-                                                        }`}>
+                                                    <span className={`text - [10px] px - 1.5 py - 0.5 rounded border ${order.status === 'Cut' ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'bg-slate-50 border-slate-100 text-slate-500'
+                                                        } `}>
                                                         {order.status}
                                                     </span>
                                                 </div>
@@ -776,8 +1006,71 @@ export default function RouteManager() {
                         )}
 
                     </div>
+                </div >
+            )
+            }
+            {/* Returns Management Modal */}
+            <Modal
+                isOpen={isReturnsModalOpen}
+                onClose={() => setIsReturnsModalOpen(false)}
+                title="Gestión de Devoluciones Pendientes"
+                size="4xl"
+            >
+                <div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="text-xs text-slate-500 uppercase bg-slate-50">
+                                <tr>
+                                    <th className="px-4 py-3">Fecha / Ruta</th>
+                                    <th className="px-4 py-3">Descripción</th>
+                                    <th className="px-4 py-3 text-center">Cant.</th>
+                                    <th className="px-4 py-3">Responsable</th>
+                                    <th className="px-4 py-3 text-right">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {pendingReturns.map(item => (
+                                    <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50">
+                                        <td className="px-4 py-3">
+                                            <div className="font-bold">{item.route?.date}</div>
+                                            <div className="text-xs text-slate-500">{item.route?.vehicle?.license_plate || 'S/D'}</div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium">{item.description}</div>
+                                            <div className="text-[10px] text-slate-400 font-mono">{item.id.slice(0, 8)}</div>
+                                        </td>
+                                        <td className="px-4 py-3 text-center font-bold">
+                                            {item.quantity}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            {item.receiver?.full_name || '-'}
+                                        </td>
+                                        <td className="px-4 py-3 text-right">
+                                            <button
+                                                onClick={() => {
+                                                    if (confirm(`¿Confirmar devolución de: ${item.description}?`)) {
+                                                        handleReturnMaterial(item.id, null);
+                                                    }
+                                                }}
+                                                className="bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded text-xs font-bold flex items-center gap-1 ml-auto"
+                                            >
+                                                <CheckCircle className="w-3 h-3" /> Devolver
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {pendingReturns.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                                            No hay materiales pendientes de devolución.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            )}
-        </div>
+            </Modal>
+        </div >
     );
 }

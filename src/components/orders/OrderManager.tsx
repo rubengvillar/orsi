@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Filter, FolderKanban, AlertCircle, Calendar, MapPin, Scissors, Box } from "lucide-react";
+import { Plus, Search, Filter, FolderKanban, AlertCircle, Calendar, MapPin, Scissors, Box, Trash2 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import type { GlassType, GlassAccessory } from '../../types/database';
 
 interface Order {
     id: string;
@@ -49,9 +50,28 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
         installer_ids: [] as string[]
     });
 
+    // New: Cuts State
+    const [pendingCuts, setPendingCuts] = useState<any[]>([]);
+    const [glassTypes, setGlassTypes] = useState<GlassType[]>([]);
+    const [glassAccessories, setGlassAccessories] = useState<GlassAccessory[]>([]);
+
+    // New: Cut Form State
+    const [cutForm, setCutForm] = useState({
+        cut_type: 'simple', // simple | dvh
+        glass_type_id: "",
+        dvh_outer_glass_id: "",
+        dvh_inner_glass_id: "",
+        dvh_chamber_id: "",
+        width_mm: "",
+        height_mm: "",
+        quantity: "1",
+        notes: ""
+    });
+
     useEffect(() => {
         fetchOrders();
         fetchOperators();
+        fetchResources();
     }, []);
 
     // Debounce Search
@@ -104,7 +124,44 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
         if (data) setOperators(data);
     };
 
-    // Helper Functions (Hoisted for Filter)
+    const fetchResources = async () => {
+        const { data: gt } = await supabase.from('glass_types').select('*').order('code');
+        setGlassTypes(gt || []);
+
+        // Fetch all accessories, used for selecting spacers (camaras)
+        const { data: allGa } = await supabase.from('glass_accessories').select('*').order('code');
+        setGlassAccessories(allGa || []);
+    };
+
+    const handleAddPendingCut = () => {
+        if (cutForm.cut_type === 'simple' && !cutForm.glass_type_id) return alert("Seleccione el vidrio");
+        if (cutForm.cut_type === 'dvh') {
+            if (!cutForm.dvh_outer_glass_id) return alert("Seleccione vidrio exterior");
+            if (!cutForm.dvh_inner_glass_id) return alert("Seleccione vidrio interior");
+            if (!cutForm.dvh_chamber_id) return alert("Seleccione la cámara");
+        }
+        if (!cutForm.width_mm || !cutForm.height_mm) return alert("Ingrese medidas");
+
+        const newCut = { ...cutForm, id: Date.now().toString() }; // Temp ID
+        setPendingCuts([...pendingCuts, newCut]);
+
+        // Reset form but keep cut type choice potentially? Let's reset relevant fields
+        setCutForm({
+            ...cutForm,
+            // Keep cut_type and glass selections as convenience? Or reset?
+            // Resetting prevents accidental double entry of same glass.
+            width_mm: "",
+            height_mm: "",
+            quantity: "1",
+            notes: ""
+        });
+    };
+
+    const removePendingCut = (id: string) => {
+        setPendingCuts(pendingCuts.filter(c => c.id !== id));
+    };
+
+    // Helper Functions
     const getStatusColor = (status: string) => {
         switch (status) {
             case "Pending": return "bg-amber-50 text-amber-700 border-amber-200";
@@ -205,6 +262,29 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
             if (linkError) console.error("Error linking operators:", linkError);
         }
 
+        // 3. Insert Cuts
+        if (pendingCuts.length > 0) {
+            const cutsPayload = pendingCuts.map(c => ({
+                order_id: newOrderId,
+                cut_type: c.cut_type,
+                glass_type_id: c.cut_type === 'simple' ? c.glass_type_id : null,
+                dvh_outer_glass_id: c.cut_type === 'dvh' ? c.dvh_outer_glass_id : null,
+                dvh_inner_glass_id: c.cut_type === 'dvh' ? c.dvh_inner_glass_id : null,
+                dvh_chamber_id: c.cut_type === 'dvh' ? c.dvh_chamber_id : null,
+                width_mm: parseInt(c.width_mm),
+                height_mm: parseInt(c.height_mm),
+                quantity: parseInt(c.quantity),
+                notes: c.notes,
+                status: 'pending'
+            }));
+
+            const { error: cutsError } = await supabase.from("order_cuts").insert(cutsPayload);
+            if (cutsError) {
+                console.error("Error creating cuts:", cutsError);
+                alert("Orden creada, pero hubo error al guardar los cortes: " + cutsError.message);
+            }
+        }
+
         setIsModalOpen(false);
         setFormData({
             client_name: "",
@@ -217,6 +297,9 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
             cutter_ids: [],
             installer_ids: []
         });
+        setPendingCuts([]);
+        setCutForm({ ...cutForm, width_mm: "", height_mm: "", quantity: "1", notes: "" });
+
         fetchOrders();
     };
 
@@ -368,8 +451,13 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
             {/* Create Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-                        <h2 className="text-xl font-bold text-slate-800 mb-4">Crear Nueva Orden</h2>
+                    <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 animate-in fade-in zoom-in duration-200">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold text-slate-800">Crear Nueva Orden</h2>
+                            <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <Plus className="w-6 h-6 rotate-45" />
+                            </button>
+                        </div>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -528,21 +616,201 @@ export default function OrderManager({ canManage }: OrderManagerProps) {
                                 </div>
                             </div>
 
-                            {/* Note: Created By is handled by RLS/Trigger or default value using auth.uid() if set in table definition, otherwise we assume default user context works or supabase handles it via RLS policies checking auth.uid() */}
+                            {/* Cuts Section */}
+                            <div className="border-t pt-4">
+                                <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                    <Scissors className="w-4 h-4" /> Agregar Cortes Iniciales
+                                </h3>
+
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3">
+                                    <div className="flex gap-4 border-b border-slate-200 pb-2 mb-2">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="cut_type"
+                                                checked={cutForm.cut_type === 'simple'}
+                                                onChange={() => setCutForm({ ...cutForm, cut_type: 'simple' })}
+                                                className="text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="text-sm font-medium text-slate-700">Simple</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="cut_type"
+                                                checked={cutForm.cut_type === 'dvh'}
+                                                onChange={() => setCutForm({ ...cutForm, cut_type: 'dvh' })}
+                                                className="text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="text-sm font-medium text-slate-700">DVH (Doble Vidrio)</span>
+                                        </label>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {cutForm.cut_type === 'simple' ? (
+                                            <div className="md:col-span-2">
+                                                <label className="block text-xs font-medium text-slate-600 mb-1">Vidrio</label>
+                                                <select
+                                                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                                    value={cutForm.glass_type_id}
+                                                    onChange={e => setCutForm({ ...cutForm, glass_type_id: e.target.value })}
+                                                >
+                                                    <option value="">- Seleccionar Vidrio -</option>
+                                                    {glassTypes.map(gt => (
+                                                        <option key={gt.id} value={gt.id}>{gt.code} - {gt.thickness_mm}mm {gt.color}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-600 mb-1">Exterior</label>
+                                                    <select
+                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                                        value={cutForm.dvh_outer_glass_id}
+                                                        onChange={e => setCutForm({ ...cutForm, dvh_outer_glass_id: e.target.value })}
+                                                    >
+                                                        <option value="">- Vidrio Ext -</option>
+                                                        {glassTypes.map(gt => (
+                                                            <option key={gt.id} value={gt.id}>{gt.code} - {gt.thickness_mm}mm {gt.color}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-600 mb-1">Interior</label>
+                                                    <select
+                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                                        value={cutForm.dvh_inner_glass_id}
+                                                        onChange={e => setCutForm({ ...cutForm, dvh_inner_glass_id: e.target.value })}
+                                                    >
+                                                        <option value="">- Vidrio Int -</option>
+                                                        {glassTypes.map(gt => (
+                                                            <option key={gt.id} value={gt.id}>{gt.code} - {gt.thickness_mm}mm {gt.color}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="md:col-span-2">
+                                                    <label className="block text-xs font-medium text-slate-600 mb-1">Cámara (Insumo)</label>
+                                                    <select
+                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                                        value={cutForm.dvh_chamber_id}
+                                                        onChange={e => setCutForm({ ...cutForm, dvh_chamber_id: e.target.value })}
+                                                    >
+                                                        <option value="">- Seleccionar Cámara -</option>
+                                                        {glassAccessories.map(ga => (
+                                                            <option key={ga.id} value={ga.id}>{ga.description} ({ga.code})</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-600 mb-1">Ancho (mm)</label>
+                                            <input
+                                                type="number"
+                                                className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                                value={cutForm.width_mm}
+                                                onChange={e => setCutForm({ ...cutForm, width_mm: e.target.value })}
+                                                placeholder="Ej: 800"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-600 mb-1">Alto (mm)</label>
+                                            <input
+                                                type="number"
+                                                className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                                value={cutForm.height_mm}
+                                                onChange={e => setCutForm({ ...cutForm, height_mm: e.target.value })}
+                                                placeholder="Ej: 1200"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-600 mb-1">Cantidad</label>
+                                            <input
+                                                type="number"
+                                                className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                                value={cutForm.quantity}
+                                                onChange={e => setCutForm({ ...cutForm, quantity: e.target.value })}
+                                                min="1"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-600 mb-1">Nota</label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                                value={cutForm.notes}
+                                                onChange={e => setCutForm({ ...cutForm, notes: e.target.value })}
+                                                placeholder="Ubicación..."
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleAddPendingCut}
+                                            className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 flex items-center gap-1"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" /> Agregar Corte
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* List of Pending Cuts */}
+                                {pendingCuts.length > 0 && (
+                                    <div className="mt-3 space-y-2">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase">Cortes Agregados ({pendingCuts.length})</h4>
+                                        <div className="border rounded-lg divide-y divide-slate-100 overflow-hidden">
+                                            {pendingCuts.map(cut => {
+                                                const glassLabel = cut.cut_type === 'simple'
+                                                    ? glassTypes.find(g => g.id === cut.glass_type_id)?.code
+                                                    : 'DVH';
+
+                                                return (
+                                                    <div key={cut.id} className="p-2 bg-white flex justify-between items-center text-sm">
+                                                        <div>
+                                                            <div className="font-bold text-slate-700">
+                                                                {cut.quantity}x {glassLabel} <span className="text-slate-400">|</span> {cut.width_mm}x{cut.height_mm}mm
+                                                            </div>
+                                                            {cut.cut_type === 'dvh' && (
+                                                                <div className="text-[10px] text-slate-500">
+                                                                    Ext: {glassTypes.find(g => g.id === cut.dvh_outer_glass_id)?.code} /
+                                                                    Cam: {glassAccessories.find(a => a.id === cut.dvh_chamber_id)?.description} /
+                                                                    Int: {glassTypes.find(g => g.id === cut.dvh_inner_glass_id)?.code}
+                                                                </div>
+                                                            )}
+                                                            {cut.notes && <div className="text-[10px] text-slate-400 italic">{cut.notes}</div>}
+                                                        </div>
+                                                        <button
+                                                            onClick={() => removePendingCut(cut.id)}
+                                                            className="text-red-400 hover:text-red-600 p-1"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <p className="text-[10px] text-blue-600 bg-blue-50 p-2 rounded">
+                                            Se agregarán estos {pendingCuts.length} cortes automáticamente al crear la orden.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
 
                             <div className="flex justify-end gap-3 pt-2">
                                 <button
                                     type="button"
                                     onClick={() => setIsModalOpen(false)}
-                                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors font-medium"
-                                    aria-label="Cancelar"
+                                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
-                                    aria-label="Confirmar Crear Orden"
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                                 >
                                     Crear Orden
                                 </button>
