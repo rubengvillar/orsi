@@ -239,9 +239,68 @@ export interface Database {
             // Orders
             orders: { Row: Order; Insert: Omit<Order, 'id'>; Update: Partial<Order> };
             order_cuts: { Row: OrderCut; Insert: Omit<OrderCut, 'id'>; Update: Partial<OrderCut> };
+
+            // Purchasing
+            suppliers: { Row: Supplier; Insert: Omit<Supplier, 'id'>; Update: Partial<Supplier> };
+            supplier_products: { Row: SupplierProduct; Insert: Omit<SupplierProduct, 'id'>; Update: Partial<SupplierProduct> };
+            purchase_orders: { Row: PurchaseOrder; Insert: Omit<PurchaseOrder, 'id'>; Update: Partial<PurchaseOrder> };
+            purchase_order_items: { Row: PurchaseOrderItem; Insert: Omit<PurchaseOrderItem, 'id'>; Update: Partial<PurchaseOrderItem> };
         };
     };
 };
+
+export interface Supplier {
+    id: string;
+    name: string;
+    contact_name: string | null;
+    email: string | null;
+    phone: string | null;
+    address: string | null;
+    tax_id: string | null;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface SupplierProduct {
+    id: string;
+    supplier_id: string;
+    product_type: 'aluminum_accessory' | 'aluminum_profile' | 'glass_type' | 'glass_accessory' | 'tool';
+    product_id: string;
+    sku: string | null;
+    price: number;
+    currency: string | null;
+    updated_at: string;
+}
+
+export interface PurchaseOrder {
+    id: string;
+    order_number: number;
+    supplier_id: string;
+    status: 'draft' | 'submitted' | 'partially_received' | 'completed' | 'cancelled';
+    expected_delivery_date: string | null;
+    notes: string | null;
+    subtotal: number;
+    tax: number;
+    total: number;
+    is_manual: boolean;
+    created_by: string | null;
+    created_at: string;
+    updated_at: string;
+    supplier?: Supplier; // Join
+}
+
+export interface PurchaseOrderItem {
+    id: string;
+    purchase_order_id: string;
+    product_type: 'aluminum_accessory' | 'aluminum_profile' | 'glass_type' | 'glass_accessory' | 'tool';
+    product_id: string;
+    quantity: number;
+    unit_price: number;
+    quantity_received: number;
+    status: 'pending' | 'received';
+    created_at: string;
+}
 
 export interface Order {
     id: string;

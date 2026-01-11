@@ -1,0 +1,17 @@
+---
+import DashboardLayout from "../../../layouts/DashboardLayout.astro";
+import SupplierManager from "../../../components/purchases/SupplierManager";
+---
+
+<DashboardLayout title="Proveedores">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-slate-800">
+            Gestión de Proveedores
+        </h1>
+        <p class="text-slate-600">
+            Gestione su lista de proveedores y su información de contacto.
+        </p>
+    </div>
+
+    <SupplierManager client:load />
+</DashboardLayout>

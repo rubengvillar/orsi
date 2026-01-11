@@ -1,0 +1,16 @@
+---
+import DashboardLayout from "../../../layouts/DashboardLayout.astro";
+import PurchaseOrderDetail from "../../../components/purchases/PurchaseOrderDetail";
+
+const { id } = Astro.params;
+---
+
+<DashboardLayout title={`Orden de Compra #${id}`}>
+    {
+        id ? (
+            <PurchaseOrderDetail client:only="react" orderId={id} />
+        ) : (
+            <p>ID de orden faltante</p>
+        )
+    }
+</DashboardLayout>

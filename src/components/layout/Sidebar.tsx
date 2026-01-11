@@ -15,6 +15,7 @@ import {
     Wrench,
     X,
     TrendingUp,
+    ShoppingCart,
 } from "lucide-react";
 import { useStore } from "@nanostores/react";
 import { isMobileMenuOpen, closeMobileMenu } from "../../stores/uiStore";
@@ -64,6 +65,14 @@ export default function Sidebar({ currentPath }: SidebarProps) {
             items: [
                 { label: "Órdenes de Producción", href: "/orders", icon: ClipboardList, permission: PERMISSIONS.ORDERS_VIEW },
                 { label: "Logística", href: "/admin/logistics", icon: Truck, permission: PERMISSIONS.LOGISTICS_VIEW },
+            ]
+        },
+        {
+            label: "Compras",
+            icon: ShoppingCart,
+            items: [
+                { label: "Dashboard", href: "/purchases", icon: LayoutDashboard, permission: PERMISSIONS.PURCHASES_VIEW },
+                { label: "Proveedores", href: "/purchases/suppliers", icon: Users, permission: PERMISSIONS.SUPPLIERS_VIEW },
             ]
         },
         {

@@ -1,0 +1,169 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+---
+
+<DashboardLayout title="Compras">
+    <div class="mb-8">
+        <h1 class="text-2xl font-bold text-slate-800">Sistema de Compras</h1>
+        <p class="text-slate-600">
+            Gestione proveedores, órdenes de compra y reposición de inventario.
+        </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Suppliers Card -->
+        <a
+            href="/purchases/suppliers"
+            class="group block p-6 bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all hover:border-blue-500"
+        >
+            <div class="flex items-center justify-between mb-4">
+                <div
+                    class="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-building-2"
+                        ><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"
+                        ></path><path
+                            d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"
+                        ></path><path
+                            d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"
+                        ></path><path d="M10 6h4"></path><path d="M10 10h4"
+                        ></path><path d="M10 14h4"></path><path d="M10 18h4"
+                        ></path></svg
+                    >
+                </div>
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="lucide lucide-arrow-right text-slate-300 group-hover:text-blue-500 transition-colors"
+                    ><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"
+                    ></path></svg
+                >
+            </div>
+            <h3 class="text-lg font-semibold text-slate-800 mb-2">
+                Proveedores
+            </h3>
+            <p class="text-slate-500 text-sm">
+                Administre la base de datos de proveedores, detalles de contacto
+                y productos vinculados.
+            </p>
+        </a>
+
+        <!-- Purchase Orders Card -->
+        <a
+            href="/purchases/orders"
+            class="group block p-6 bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all hover:border-purple-500"
+        >
+            <div class="flex items-center justify-between mb-4">
+                <div
+                    class="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-shopping-cart"
+                        ><circle cx="8" cy="21" r="1"></circle><circle
+                            cx="19"
+                            cy="21"
+                            r="1"></circle><path
+                            d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"
+                        ></path></svg
+                    >
+                </div>
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="lucide lucide-arrow-right text-slate-300 group-hover:text-purple-500 transition-colors"
+                    ><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"
+                    ></path></svg
+                >
+            </div>
+            <h3 class="text-lg font-semibold text-slate-800 mb-2">
+                Órdenes de Compra
+            </h3>
+            <p class="text-slate-500 text-sm">
+                Cree y gestione órdenes de compra para reponer stock.
+            </p>
+        </a>
+
+        <!-- Low Stock Card -->
+        <a
+            href="/purchases/low-stock"
+            class="group block p-6 bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all hover:border-red-500"
+        >
+            <div class="flex items-center justify-between mb-4">
+                <div
+                    class="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-package-check"
+                        ><path d="m16 16 2 2 4-4"></path><path
+                            d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"
+                        ></path><path d="m3.3 7 8.7 5 8.7-5"></path><path
+                            d="M12 22V12"></path></svg
+                    >
+                </div>
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="lucide lucide-arrow-right text-slate-300 group-hover:text-red-500 transition-colors"
+                    ><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"
+                    ></path></svg
+                >
+            </div>
+            <h3 class="text-lg font-semibold text-slate-800 mb-2">
+                Stock Bajo y Reposición
+            </h3>
+            <p class="text-slate-500 text-sm">
+                Monitoree artículos con bajo stock y genere órdenes de compra
+                automáticamente.
+            </p>
+        </a>
+    </div>
+</DashboardLayout>

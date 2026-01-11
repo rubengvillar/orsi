@@ -54,10 +54,20 @@ export const PERMISSIONS = {
 
     ORDERS_MATERIAL_EDIT: 'orders:material:edit',
     ORDERS_MATERIAL_DELETE: 'orders:material:delete',
+
+    PURCHASES_VIEW: 'purchases:view',
+    SUPPLIERS_VIEW: 'suppliers:view',
+    SUPPLIERS_WRITE: 'suppliers:write',
+
+    PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
+    PURCHASE_ORDERS_WRITE: 'purchase_orders:write',
 };
 
 export const PATH_PERMISSIONS: Record<string, string> = {
     '/dashboard': PERMISSIONS.DASHBOARD,
+    '/purchases': PERMISSIONS.PURCHASES_VIEW,
+    '/purchases/suppliers': PERMISSIONS.SUPPLIERS_VIEW,
+    '/purchases/orders': PERMISSIONS.PURCHASE_ORDERS_VIEW,
     '/orders': PERMISSIONS.ORDERS_VIEW,
     '/logistics': PERMISSIONS.LOGISTICS_VIEW,
     '/inventory/accessories': PERMISSIONS.INVENTORY_ACCESSORIES_VIEW,
