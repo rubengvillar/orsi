@@ -53,7 +53,7 @@ export default function LowStockManager() {
         const { data: profiles } = await supabase.from('aluminum_profiles').select('*');
         if (profiles) {
             profiles.forEach(p => {
-                if (p.quantity <= p.min_stock) {
+                if (p.min_stock > 0 && p.quantity <= p.min_stock) {
                     lowStock.push({
                         id: p.id,
                         type: 'aluminum_profile',
@@ -70,7 +70,7 @@ export default function LowStockManager() {
         const { data: alAccessories } = await supabase.from('aluminum_accessories').select('*');
         if (alAccessories) {
             alAccessories.forEach(a => {
-                if (a.quantity <= a.min_stock) {
+                if (a.min_stock > 0 && a.quantity <= a.min_stock) {
                     lowStock.push({
                         id: a.id,
                         type: 'aluminum_accessory',
@@ -87,7 +87,7 @@ export default function LowStockManager() {
         const { data: glAccessories } = await supabase.from('glass_accessories').select('*');
         if (glAccessories) {
             glAccessories.forEach(a => {
-                if (a.quantity <= a.min_stock) {
+                if (a.min_stock > 0 && a.quantity <= a.min_stock) {
                     lowStock.push({
                         id: a.id,
                         type: 'glass_accessory',
@@ -111,7 +111,7 @@ export default function LowStockManager() {
                     .filter(s => s.glass_type_id === t.id)
                     .reduce((sum, s) => sum + s.quantity, 0);
 
-                if (totalSheets <= t.min_stock_sheets) {
+                if (t.min_stock_sheets > 0 && totalSheets <= t.min_stock_sheets) {
                     lowStock.push({
                         id: t.id,
                         type: 'glass_type' as any, // Cast because LowStockItem type needs update

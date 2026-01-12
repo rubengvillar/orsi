@@ -3,7 +3,15 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Modal } from '../ui/Modal';
 import { Plus, Trash2, Save, Send, CheckCircle, ArrowLeft, PackageCheck } from 'lucide-react';
-import type { PurchaseOrder, PurchaseOrderItem } from '../../types/database';
+import type { PurchaseOrder, PurchaseOrderItem, Supplier } from '../../types/database';
+
+const CATEGORIES = [
+    { id: 'aluminum_profile', label: 'Perfil' },
+    { id: 'aluminum_accessory', label: 'Acc. Aluminio' },
+    { id: 'glass_type', label: 'Hoja de Vidrio' },
+    { id: 'glass_accessory', label: 'Acc. Vidrio' },
+    { id: 'tool', label: 'Herramienta' }
+];
 
 interface Props {
     orderId: string;
@@ -29,6 +37,20 @@ export default function PurchaseOrderDetail({ orderId }: Props) {
     const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
     const [newItemQty, setNewItemQty] = useState(1);
     const [newItemPrice, setNewItemPrice] = useState(0);
+
+    // Filtered Categories based on supplier
+    const [availableCategories, setAvailableCategories] = useState(CATEGORIES);
+    const [searchType, setSearchType] = useState('aluminum_profile');
+
+    useEffect(() => {
+        if (order?.supplier?.provided_categories) {
+            const filtered = CATEGORIES.filter(c => order.supplier!.provided_categories.includes(c.id));
+            setAvailableCategories(filtered);
+            if (filtered.length > 0) {
+                setSearchType(filtered[0].id);
+            }
+        }
+    }, [order]);
 
     // Receive State
     const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
@@ -159,7 +181,28 @@ export default function PurchaseOrderDetail({ orderId }: Props) {
     };
 
     // Helper for Add Item Modal
-    const [searchType, setSearchType] = useState('aluminum_profile');
+    useEffect(() => {
+        if (selectedItem && order?.supplier_id) {
+            fetchSupplierPrice(selectedItem.type, selectedItem.id);
+        }
+    }, [selectedItem, order?.supplier_id]);
+
+    const fetchSupplierPrice = async (type: string, id: string) => {
+        const { data } = await supabase
+            .from('supplier_products')
+            .select('price')
+            .eq('supplier_id', order!.supplier_id)
+            .eq('product_type', type)
+            .eq('product_id', id)
+            .maybeSingle();
+
+        if (data) {
+            setNewItemPrice(data.price);
+        } else {
+            setNewItemPrice(0);
+        }
+    };
+
     const executeSearch = async () => {
         let table = '';
         let query = supabase.from('aluminum_profiles').select('id, code, description'); // Default
@@ -311,11 +354,9 @@ export default function PurchaseOrderDetail({ orderId }: Props) {
                             value={searchType}
                             onChange={(e) => setSearchType(e.target.value)}
                         >
-                            <option value="aluminum_profile">Perfil</option>
-                            <option value="aluminum_accessory">Acc. Aluminio</option>
-                            <option value="glass_type">Hoja de Vidrio</option>
-                            <option value="glass_accessory">Acc. Vidrio</option>
-                            <option value="tool">Herramienta</option>
+                            {availableCategories.map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.label}</option>
+                            ))}
                         </select>
                         <input
                             type="text"

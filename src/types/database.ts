@@ -258,6 +258,7 @@ export interface Supplier {
     address: string | null;
     tax_id: string | null;
     notes: string | null;
+    provided_categories: string[];
     created_at: string;
     updated_at: string;
 }
