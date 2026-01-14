@@ -38,6 +38,7 @@ export interface AluminumProfile {
     quantity: number;
     length_mm: number;
     min_stock: number;
+    weight_per_meter: number; // Added for weight-based costing
     created_at: string;
 }
 
@@ -55,17 +56,21 @@ export interface GlassType {
     code: string;
     thickness_mm: string;
     color: string | null;
+    structure: 'Simple' | 'Laminado' | 'DVH' | null; // Added structure
     description: string | null;
-    min_stock_sheets: number;
-    std_width_mm: number;
-    std_height_mm: number;
+    min_stock_sheets?: number; // Deprecated
+    std_width_mm?: number; // Deprecated
+    std_height_mm?: number; // Deprecated
     created_at: string;
 }
 
 export interface GlassSheet {
     id: string;
     glass_type_id: string;
+    width_mm: number; // Moved here
+    height_mm: number; // Moved here
     quantity: number;
+    min_stock: number; // Added
     created_at: string;
 }
 
@@ -245,9 +250,72 @@ export interface Database {
             supplier_products: { Row: SupplierProduct; Insert: Omit<SupplierProduct, 'id'>; Update: Partial<SupplierProduct> };
             purchase_orders: { Row: PurchaseOrder; Insert: Omit<PurchaseOrder, 'id'>; Update: Partial<PurchaseOrder> };
             purchase_order_items: { Row: PurchaseOrderItem; Insert: Omit<PurchaseOrderItem, 'id'>; Update: Partial<PurchaseOrderItem> };
+
+            // Carpentry System
+            carpentry_systems: { Row: CarpentrySystem; Insert: Omit<CarpentrySystem, 'id'>; Update: Partial<CarpentrySystem> };
+            system_profiles: { Row: SystemProfile; Insert: Omit<SystemProfile, 'id'>; Update: Partial<SystemProfile> };
+            carpentry_projects: { Row: CarpentryProject; Insert: Omit<CarpentryProject, 'id'>; Update: Partial<CarpentryProject> };
+            carpentry_units: { Row: CarpentryUnit; Insert: Omit<CarpentryUnit, 'id'>; Update: Partial<CarpentryUnit> };
         };
     };
 };
+
+export interface CarpentrySystem {
+    id: string;
+    name: string;
+    brand: string;
+    description: string | null;
+    base_color: string | null;
+    configuration: any; // JSONB
+    created_at: string;
+}
+
+export interface SystemProfile {
+    id: string;
+    system_id: string;
+    role: string;
+    aluminum_profile_id: string;
+    is_default: boolean;
+    properties: any; // JSONB
+    created_at: string;
+    // Joins
+    aluminum_profile?: AluminumProfile;
+}
+
+export interface CarpentryProject {
+    id: string;
+    project_number: number;
+    name: string;
+    client_name: string | null;
+    client_address: string | null;
+    status: 'draft' | 'confirmed' | 'production' | 'completed';
+    notes: string | null;
+    created_by: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CarpentryUnit {
+    id: string;
+    project_id: string;
+    name: string;
+    system_id: string | null;
+    width: number;
+    height: number;
+    quantity: number;
+    opening_type: string | null;
+    glass_type_id: string | null;
+    glass_composition: 'simple' | 'dvh' | 'laminated' | null;
+    is_irregular: boolean;
+    geometry_data: any; // JSONB { nodes: [], segments: [] }
+    estimated_cost: number;
+    cost_breakdown: any; // JSONB
+    created_at: string;
+    updated_at: string;
+    // Joins
+    system?: CarpentrySystem;
+    glass_type?: GlassType;
+}
 
 export interface Supplier {
     id: string;
@@ -299,6 +367,8 @@ export interface PurchaseOrderItem {
     quantity: number;
     unit_price: number;
     quantity_received: number;
+    width_mm?: number; // Added
+    height_mm?: number; // Added
     status: 'pending' | 'received';
     created_at: string;
 }

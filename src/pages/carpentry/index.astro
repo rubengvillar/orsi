@@ -1,0 +1,17 @@
+---
+import Layout from "../../layouts/DashboardLayout.astro";
+import ProjectList from "../../components/carpentry/ProjectList";
+---
+
+<Layout title="Proyectos de Carpintería">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-slate-800">
+            Proyectos de Carpintería
+        </h1>
+        <p class="text-slate-600">
+            Gestione presupuestos y fabricación de aberturas de aluminio.
+        </p>
+    </div>
+
+    <ProjectList client:load />
+</Layout>

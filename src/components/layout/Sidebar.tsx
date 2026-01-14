@@ -64,6 +64,7 @@ export default function Sidebar({ currentPath }: SidebarProps) {
             icon: ClipboardList,
             items: [
                 { label: "Órdenes de Producción", href: "/orders", icon: ClipboardList, permission: PERMISSIONS.ORDERS_VIEW },
+                { label: "Carpintería", href: "/carpentry", icon: Box, permission: PERMISSIONS.ORDERS_VIEW }, // Using existing perm for now or generic
                 { label: "Logística", href: "/admin/logistics", icon: Truck, permission: PERMISSIONS.LOGISTICS_VIEW },
             ]
         },

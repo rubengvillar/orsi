@@ -32,25 +32,46 @@ export default function CuttingOptimizer() {
 
     const fetchData = async () => {
         setLoading(true);
-        // Fetch ALL pending or optimized cuts
-        const { data: cuts } = await supabase
-            .from("order_cuts")
-            .select("*, orders(client_name, order_number, legacy_order_number, created_at), glass_types(code, thickness_mm, color)")
-            .in("status", ["pending", "optimized", "Pending", "Optimized"]);
+        try {
+            // 1. Fetch Types (Ensure we have them for manual join)
+            const { data: typesData } = await supabase.from('glass_types').select('*');
+            const typesMap = new Map((typesData || []).map(t => [t.id, t]));
+            // Also update the state for other usages
+            setGlassTypes(typesData || []);
 
-        console.log("CuttingOptimizer fetch result:", { cuts });
-        if (!cuts) console.warn("CuttingOptimizer: No cuts found or null returned.");
+            // 2. Fetch ALL pending or optimized cuts (WITHOUT the failing glass_types join)
+            const { data: cuts, error } = await supabase
+                .from("order_cuts")
+                .select("*, orders(client_name, order_number, legacy_order_number, created_at)")
+                .in("status", ["pending", "Pending"]);
 
+            if (error) {
+                console.error("Error fetching order_cuts:", error);
+                throw error;
+            }
 
-        // Manual sort because foreign table sorting in Supabase JS client can be tricky with joined data sometimes
-        const sortedCuts = (cuts || []).sort((a: any, b: any) => {
-            const dateA = new Date(a.orders?.created_at || 0).getTime();
-            const dateB = new Date(b.orders?.created_at || 0).getTime();
-            return dateA - dateB;
-        });
+            // 3. Manual Client-Side Join
+            const joinedCuts = (cuts || []).map((cut: any) => ({
+                ...cut,
+                glass_types: typesMap.get(cut.glass_type_id) || null
+            }));
 
-        setPendingCuts(sortedCuts);
-        setLoading(false);
+            console.log("CuttingOptimizer fetch result:", { cuts: joinedCuts });
+            if (!joinedCuts.length) console.warn("CuttingOptimizer: No cuts found.");
+
+            // 4. Sort
+            const sortedCuts = joinedCuts.sort((a: any, b: any) => {
+                const dateA = new Date(a.orders?.created_at || 0).getTime();
+                const dateB = new Date(b.orders?.created_at || 0).getTime();
+                return dateA - dateB;
+            });
+
+            setPendingCuts(sortedCuts);
+        } catch (err: any) {
+            console.error("CuttingOptimizer Data Fetch Error:", err);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const toggleCutSelection = (id: string) => {
@@ -174,20 +195,26 @@ export default function CuttingOptimizer() {
                 const glassType = glassTypes.find(t => t.id === typeId);
 
                 // Fetch STOCK for this type
-                const { data: sheets } = await supabase.from('glass_sheets').select('quantity').eq('glass_type_id', typeId).single();
+                const { data: sheets } = await supabase.from('glass_sheets').select('*').eq('glass_type_id', typeId).gt('quantity', 0);
                 const { data: remnants } = await supabase.from('glass_remnants').select('*').eq('glass_type_id', typeId).order('width_mm', { ascending: false });
 
                 const stock = {
-                    sheets: sheets?.quantity || 0,
-                    remnants: (remnants || []).sort((a, b) => (a.width_mm * a.height_mm) - (b.width_mm * b.height_mm))
+                    sheets: (sheets || []).sort((a, b) => (b.width_mm * b.height_mm) - (a.width_mm * a.height_mm)), // Largest sheets first
+                    remnants: (remnants || []).sort((a, b) => (a.width_mm * a.height_mm) - (b.width_mm * b.height_mm)) // Smallest remnants first? Original code was sorting by Area a-b (Ascending? So smallest first).
                 };
 
                 // Sort by height descending
                 typeCuts.sort((a, b) => b.height_mm - a.height_mm);
 
                 // FILTER: Exclude cuts that are definitely too big for ANY stock (sheet or largest remnant)
-                const maxStockW = Math.max(stock.sheets > 0 ? glassType.std_width_mm : 0, ...stock.remnants.map((r: any) => r.width_mm));
-                const maxStockH = Math.max(stock.sheets > 0 ? glassType.std_height_mm : 0, ...stock.remnants.map((r: any) => r.height_mm));
+                const maxSheetW = stock.sheets.length > 0 ? Math.max(...stock.sheets.map((s: any) => s.width_mm)) : 0;
+                const maxSheetH = stock.sheets.length > 0 ? Math.max(...stock.sheets.map((s: any) => s.height_mm)) : 0;
+
+                const maxRemnantW = stock.remnants.length > 0 ? Math.max(...stock.remnants.map((r: any) => r.width_mm)) : 0;
+                const maxRemnantH = stock.remnants.length > 0 ? Math.max(...stock.remnants.map((r: any) => r.height_mm)) : 0;
+
+                const maxStockW = Math.max(maxSheetW, maxRemnantW);
+                const maxStockH = Math.max(maxSheetH, maxRemnantH);
 
                 let remainingCuts: any[] = [];
                 const skippedCuts: any[] = [];
@@ -254,10 +281,44 @@ export default function CuttingOptimizer() {
                     }
                 }
 
-                // 2. Use Full Sheets
+                // 2. Use Full Sheets (Iterate available stock)
+                // We track local quantity consumption of stock.sheets
+                const availableSheets = stock.sheets.map(s => ({ ...s })); // Clone to track current qty usage
+
                 while (remainingCuts.length > 0) {
-                    const sheetW = glassType.std_width_mm;
-                    const sheetH = glassType.std_height_mm;
+                    // Find a sheet that can fit at least the first cut (which is largest height)
+                    let selectedSheet: any = null;
+
+                    // Simple Strategy: Find first available sheet type that fits the first cut
+                    // Since specific size matching is complex, we iterate available types
+                    for (const sheet of availableSheets) {
+                        if (sheet.quantity > 0) {
+                            // Check potential fit (rough check)
+                            const cut = remainingCuts[0];
+                            const fits = (cut.width_mm <= sheet.width_mm && cut.height_mm <= sheet.height_mm) ||
+                                (cut.height_mm <= sheet.width_mm && cut.width_mm <= sheet.height_mm);
+
+                            if (fits) {
+                                selectedSheet = sheet;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!selectedSheet) {
+                        // No sheet found that fits the next cut
+                        console.warn("No stock sheet fits remaining cuts.");
+                        // Move all remaining to skipped? Or break to avoid infinite loop
+                        if (remainingCuts.length > 0) {
+                            allSkippedCuts.push(...remainingCuts);
+                            remainingCuts = [];
+                        }
+                        break;
+                    }
+
+                    // Use the selected sheet
+                    const sheetW = selectedSheet.width_mm;
+                    const sheetH = selectedSheet.height_mm;
                     let currentSheetCuts: any[] = [];
                     let x = 0, y = 0, shelfH = 0;
 
@@ -279,16 +340,20 @@ export default function CuttingOptimizer() {
                     }
 
                     if (currentSheetCuts.length === 0) {
-                        // Should not happen due to pre-filtering but safe-guard
-                        // Move problematic cut to skipped? For now break to avoid infinite loop
-                        console.warn(`Could not fit cut ${remainingCuts[0].width_mm}x${remainingCuts[0].height_mm} in new sheet despite pre-check.`);
-                        break;
+                        // Fit failed despite pre-check? (e.g. rotation issue logic in loop vs fit check)
+                        // Force skip first cut to avoid infinite loop
+                        const badCut = remainingCuts.shift();
+                        if (badCut) allSkippedCuts.push(badCut);
+                        continue;
                     }
+
+                    // Decrement stock
+                    selectedSheet.quantity--;
 
                     const pieceObj = {
                         type: 'Hoja Entera',
                         glassType: glassType,
-                        id: null,
+                        id: selectedSheet.id, // We now have a specific Sheet ID
                         dimensions: { w: sheetW, h: sheetH },
                         dimText: `${sheetW}x${sheetH}`,
                         cuts: currentSheetCuts,

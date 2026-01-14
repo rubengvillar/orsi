@@ -1,0 +1,14 @@
+---
+import Layout from "../../../layouts/DashboardLayout.astro";
+import ProjectDetail from "../../../components/carpentry/ProjectDetail";
+
+const { id } = Astro.params;
+
+if (!id) {
+    return Astro.redirect("/carpentry");
+}
+---
+
+<Layout title="Detalle de Proyecto">
+    <ProjectDetail projectId={id} client:only="react" />
+</Layout>

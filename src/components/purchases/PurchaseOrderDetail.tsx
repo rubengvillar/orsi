@@ -37,6 +37,8 @@ export default function PurchaseOrderDetail({ orderId }: Props) {
     const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
     const [newItemQty, setNewItemQty] = useState(1);
     const [newItemPrice, setNewItemPrice] = useState(0);
+    const [newItemWidth, setNewItemWidth] = useState<number | undefined>(undefined);
+    const [newItemHeight, setNewItemHeight] = useState<number | undefined>(undefined);
 
     // Filtered Categories based on supplier
     const [availableCategories, setAvailableCategories] = useState(CATEGORIES);
@@ -122,12 +124,16 @@ export default function PurchaseOrderDetail({ orderId }: Props) {
                 product_type: selectedItem.type,
                 product_id: selectedItem.id,
                 quantity: newItemQty,
-                unit_price: newItemPrice
+                unit_price: newItemPrice,
+                width_mm: newItemWidth,
+                height_mm: newItemHeight
             });
 
             if (error) throw error;
             setIsAddModalOpen(false);
             setSelectedItem(null);
+            setNewItemWidth(undefined);
+            setNewItemHeight(undefined);
             fetchOrderDetails(); // Refresh
         } catch (e) {
             console.error(e);
@@ -384,24 +390,39 @@ export default function PurchaseOrderDetail({ orderId }: Props) {
                     )}
 
                     {selectedItem && (
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs text-slate-500 mb-1">Cantidad</label>
-                                <input
-                                    type="number"
-                                    className="w-full px-3 py-2 border rounded-lg"
-                                    value={newItemQty}
-                                    onChange={(e) => setNewItemQty(Number(e.target.value))}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-slate-500 mb-1">Precio Unitario</label>
-                                <input
-                                    type="number"
-                                    className="w-full px-3 py-2 border rounded-lg"
-                                    value={newItemPrice}
-                                    onChange={(e) => setNewItemPrice(Number(e.target.value))}
-                                />
+                        <div className="space-y-4">
+                            {selectedItem.type === 'glass_type' && (
+                                <div className="grid grid-cols-2 gap-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                    <div>
+                                        <label className="block text-xs text-blue-800 mb-1 font-semibold">Ancho (mm)</label>
+                                        <input type="number" className="w-full px-3 py-2 border rounded-lg border-blue-200" value={newItemWidth || ''} onChange={(e) => setNewItemWidth(Number(e.target.value))} placeholder="Ej. 2400" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-blue-800 mb-1 font-semibold">Alto (mm)</label>
+                                        <input type="number" className="w-full px-3 py-2 border rounded-lg border-blue-200" value={newItemHeight || ''} onChange={(e) => setNewItemHeight(Number(e.target.value))} placeholder="Ej. 3210" />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs text-slate-500 mb-1">Cantidad</label>
+                                    <input
+                                        type="number"
+                                        className="w-full px-3 py-2 border rounded-lg"
+                                        value={newItemQty}
+                                        onChange={(e) => setNewItemQty(Number(e.target.value))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-slate-500 mb-1">Precio Unitario</label>
+                                    <input
+                                        type="number"
+                                        className="w-full px-3 py-2 border rounded-lg"
+                                        value={newItemPrice}
+                                        onChange={(e) => setNewItemPrice(Number(e.target.value))}
+                                    />
+                                </div>
                             </div>
                         </div>
                     )}
@@ -420,7 +441,8 @@ export default function PurchaseOrderDetail({ orderId }: Props) {
             </Modal>
 
             {/* Receive Modal */}
-            <Modal isOpen={isReceiveModalOpen} onClose={() => setIsReceiveModalOpen(false)} title="Recibir Artículos" size="lg">
+            < Modal isOpen={isReceiveModalOpen} onClose={() => setIsReceiveModalOpen(false)
+            } title="Recibir Artículos" size="lg" >
                 <div className="space-y-4">
                     <p className="text-sm text-slate-500 mb-4">
                         Ingrese la cantidad recibida para cada artículo. Esto actualizará su stock inmediatamente.
@@ -484,7 +506,7 @@ export default function PurchaseOrderDetail({ orderId }: Props) {
                         </button>
                     </div>
                 </div>
-            </Modal>
-        </div>
+            </Modal >
+        </div >
     );
 }
